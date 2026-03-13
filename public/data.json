@@ -1,0 +1,16 @@
+{
+  "hero": {
+    "title": "Vue Test Project",
+    "subtitle": "หน้าทดสอบ"
+  },
+  "news": [
+    { "id": 1, "title": "Vue 3.5 released with improved performance", "date": "2025-03-10" },
+    { "id": 2, "title": "TypeScript 5.4 adds new utility types", "date": "2025-03-08" },
+    { "id": 3, "title": "Node.js 22 becomes LTS", "date": "2025-03-05" }
+  ],
+  "feed": [
+    { "id": 1, "title": "Getting started with Vue 3", "body": "Composition API ทำให้โค้ดอ่านง่ายขึ้นมาก", "tag": "vue" },
+    { "id": 2, "title": "JSON as a mock backend", "body": "ใช้ไฟล์ JSON แทน API จริงตอน dev ช่วยประหยัดเวลา", "tag": "tip" },
+    { "id": 3, "title": "Black & white UI", "body": "ลด noise ด้วยการตัด color ออก ใช้แค่ contrast", "tag": "ui" }
+  ]
+}
