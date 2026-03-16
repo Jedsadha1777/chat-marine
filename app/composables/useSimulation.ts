@@ -166,6 +166,22 @@ export function useSimulation() {
     }))
   })
 
+  // ─── compatibleEntitiesFor ───────────────────────────────────
+  // รายการ entity ที่ user เลือก pin ได้ — กรอง pairwise error
+  // กับทุก slot ที่มีอยู่แล้ว (pinned หรือ suggestion) ยกเว้น slot ตัวเอง
+
+  function compatibleEntitiesFor(type: EntityType): Entity[] {
+    const currentSet = ENTITY_TYPES
+      .filter((t) => t !== type && !excluded[t])
+      .map((t) => pinned[t] ?? suggestion.value[t])
+      .filter((e): e is Entity => e !== null)
+
+    return ENTITIES.filter((e) => {
+      if (e.entity_type !== type) return false
+      return passesPairwise(e, currentSet)
+    })
+  }
+
   // ─── Actions ──────────────────────────────────────────────────
 
   function pin(type: EntityType, entity: Entity | null): void {
@@ -203,5 +219,6 @@ export function useSimulation() {
     pin,
     exclude,
     clearAll,
+    compatibleEntitiesFor,
   }
 }

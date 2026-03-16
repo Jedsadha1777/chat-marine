@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Entity } from '~/data/types'
-import { ENTITIES_BY_TYPE, ENTITY_TYPE_LABELS, type EntityType } from '~/data/entities'
+import { ENTITY_TYPE_LABELS, type EntityType } from '~/data/entities'
 
 const {
   budget,
@@ -17,6 +17,7 @@ const {
   exclude,
   excluded,
   clearAll,
+  compatibleEntitiesFor,
 } = useSimulation()
 
 const SLOT_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard', 'ram', 'psu']
@@ -190,7 +191,7 @@ const powerPct  = computed(() => {
                 ✕ ไม่ใช้ชิ้นส่วนนี้
               </button>
               <button
-                v-for="entity in ENTITIES_BY_TYPE(type)"
+                v-for="entity in compatibleEntitiesFor(type)"
                 :key="entity.id"
                 class="pin-option"
                 :class="{ active: pinned[type]?.id === entity.id }"
