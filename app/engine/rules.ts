@@ -1,4 +1,4 @@
-import type { CompatibilityRule } from './types'
+import type { CompatibilityRule } from '~/data/types'
 
 export const RULES: CompatibilityRule[] = [
 
@@ -49,33 +49,9 @@ export const RULES: CompatibilityRule[] = [
     resolution: 'เลือก RAM ที่ตรงกับ type ของ Motherboard',
   },
 
-  // ─── Pairwise: RAM modules ≤ MB slots ────────────────────────
-  {
-    id:         3,
-    code:       'RAM_SLOT_FIT',
-    name:       'RAM Modules Must Fit Motherboard Slots',
-    check_type: 'pairwise',
-    severity:   'error',
-    priority:   180,
-    is_active:  true,
-    scope: {
-      match_by:         'attribute_pair',
-      source_attribute: 'modules',
-      target_attribute: 'ram_slots',
-    },
-    condition: {
-      '<=': [
-        { var: 'source.attributes.modules' },
-        { var: 'target.attributes.ram_slots' },
-      ],
-    },
-    message:    'RAM มี :source.attributes.modules โมดูล เกิน slot ของ :target.name ที่มี :target.attributes.ram_slots slot',
-    resolution: 'เลือก RAM ที่มีจำนวนโมดูลไม่เกิน slot ของ Motherboard',
-  },
-
   // ─── Pairwise: CPU TDP ≤ MB tdp_support ──────────────────────
   {
-    id:         4,
+    id:         3,
     code:       'CPU_TDP_SUPPORT',
     name:       'Motherboard Must Support CPU TDP',
     check_type: 'pairwise',
@@ -95,6 +71,35 @@ export const RULES: CompatibilityRule[] = [
     },
     message:    'CPU TDP :source.attributes.tdp_w W เกินที่ :target.name รองรับ :target.attributes.tdp_support_w W',
     resolution: 'เลือก Motherboard ที่รองรับ TDP ของ CPU',
+  },
+
+  // ─── Aggregate: RAM modules รวม ≤ MB ram_slots ───────────────
+  // ใช้ multiply_by_quantity: true เพื่อนับ modules × จำนวน kit
+  // เช่น 2 kit × 2 modules = 4 modules → ต้องไม่เกิน ram_slots ของ MB
+  {
+    id:         4,
+    code:       'AGG_RAM_SLOTS',
+    name:       'Total RAM Modules Must Not Exceed Motherboard Slots',
+    check_type: 'aggregate',
+    severity:   'error',
+    priority:   195,
+    is_active:  true,
+    condition: {
+      aggregate: {
+        function:             'sum',
+        attribute:            'modules',
+        from_types:           ['ram'],
+        multiply_by_quantity: true,
+      },
+      compare_to: {
+        mode:        'entity_attribute',
+        entity_type: 'motherboard',
+        attribute:   'ram_slots',
+      },
+      operator: '<=',
+    },
+    message:    'RAM รวม :aggregate_value โมดูล เกิน Motherboard ที่มี :capacity_value slot',
+    resolution: 'ลดจำนวน RAM kit หรือเลือก Motherboard ที่มี slot มากกว่านี้',
   },
 
   // ─── Aggregate: Power capacity (error) ───────────────────────
