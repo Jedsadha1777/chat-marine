@@ -246,12 +246,11 @@ export function useSimulation() {
       const typeBudget = fillBudget + floor[type]
 
       const filtered = ENTITIES.filter((e) => {
+        if (e.status !== 'published') return false
         if (e.entity_type !== type) return false
         if (unitCost(e) > typeBudget) return false
         if (blockedIds.has(e.id) && !pinned[type].some((s) => s.entity.id === e.id)) return false
         if (!cachedPairwise(e, filled)) return false
-        // #5 fix: pre-check aggregate dengan qty=1 เป็น quick guard ก่อน
-        // qty จริงจะเช็คอีกครั้งตอน fill
         if (AGGREGATE_GUARD_TYPES.includes(type)) {
           if (!passesAggregateWithQty(result, type, e, 1)) return false
         }
@@ -426,6 +425,7 @@ export function useSimulation() {
         .flatMap((t) => (pinned[t].length > 0 ? pinned[t] : suggestion.value[t]).map((s) => s.entity)),
     )
     return ENTITIES.filter((e) => {
+      if (e.status !== 'published') return false
       if (e.entity_type !== type) return false
       return cachedPairwise(e, currentEntities)
     })
