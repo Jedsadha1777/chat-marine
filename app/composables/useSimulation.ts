@@ -7,7 +7,7 @@ import type { Entity, SimulationItem, ValidationIssue, BomItem } from '~/data/ty
 import { RULES } from '~/data/rules'
 import { ENTITIES, ENTITY_TYPES, type EntityType } from '~/data/entities'
 import { runPairwise } from '~/engine/pairwise'
-import { runAggregate } from '~/engine/aggregate'
+import { runAggregate, getAggregateDetail } from '~/engine/aggregate'
 import {
   FILL_ORDER,
   MAX_PER_TYPE,
@@ -27,7 +27,7 @@ import {
 // ─── SlotItem ─────────────────────────────────────────────────────
 
 export interface SlotItem {
-  entity:   Entity
+  entity: Entity
   quantity: number
 }
 
@@ -109,7 +109,7 @@ function remainingCapacity(type: EntityType, items: { entity: Entity; quantity: 
 // คืนค่า floor และ warning ถ้า hardMin รวมกันเกิน budget
 
 interface FloorResult {
-  floor:    Record<EntityType, number>
+  floor: Record<EntityType, number>
   overflow: boolean  // true = floor รวมเกิน budget — ควรแจ้งเตือน user
 }
 
@@ -120,7 +120,7 @@ function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult
 
   // ตรวจ hard min รวม
   const totalHardMin = freeTypes.reduce((s, t) => s + (HARD_FLOOR_MIN[t] ?? 0), 0)
-  const overflow     = totalHardMin > totalBudget
+  const overflow = totalHardMin > totalBudget
 
   const total = freeTypes.reduce((s, t) => s + raw[t], 0)
   let floor: Record<EntityType, number>
@@ -130,7 +130,7 @@ function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult
     floor = Object.fromEntries(
       ENTITY_TYPES.map((t) => {
         const hardMin = HARD_FLOOR_MIN[t] ?? 0
-        const scaled  = raw[t] * scale
+        const scaled = raw[t] * scale
         // #2 fix: hard min มีผล แต่รวมทุก type แล้วต้องไม่เกิน totalBudget
         return [t, Math.min(totalBudget, Math.max(hardMin, scaled))]
       }),
@@ -175,9 +175,9 @@ function cachedPairwise(candidate: Entity, others: Entity[]): boolean {
 
 export function useSimulation() {
 
-  const budget   = ref<number | null>(null)
-  const pinned    = reactive<Record<EntityType, SlotItem[]>>(emptySlots())
-  const excluded  = reactive<Record<EntityType, boolean>>(
+  const budget = ref<number | null>(null)
+  const pinned = reactive<Record<EntityType, SlotItem[]>>(emptySlots())
+  const excluded = reactive<Record<EntityType, boolean>>(
     Object.fromEntries(ENTITY_TYPES.map((t) => [t, false])) as Record<EntityType, boolean>,
   )
   const blockedIds = reactive<Set<number>>(new Set())
@@ -219,17 +219,21 @@ export function useSimulation() {
       .filter((t) => !excluded[t])
       .reduce((sum, t) => sum + result[t].reduce((s, i) => s + slotCost(i), 0), 0)
 
-    let remaining  = budget.value !== null ? budget.value - pinnedCost : Infinity
+    let remaining = budget.value !== null ? budget.value - pinnedCost : Infinity
     const freeTypes = FILL_ORDER.filter((t) => !excluded[t] && result[t].length === 0)
 
     const { floor, overflow } = budget.value !== null
       ? computeFloor(budget.value, freeTypes)
-      : computeFloor(0, freeTypes)
+      : {
+        floor: Object.fromEntries(ENTITY_TYPES.map((t) => [t, 0])) as Record<EntityType, number>,
+        overflow: false,
+      }
+
 
     floorOverflow.value = overflow  // #2: expose ให้ UI แสดง warning
 
     const totalFloor = freeTypes.reduce((s, t) => s + floor[t], 0)
-    let fillBudget   = Math.max(0, remaining - totalFloor)
+    let fillBudget = Math.max(0, remaining - totalFloor)
 
     for (const type of FILL_ORDER) {
       if (excluded[type]) continue
@@ -238,11 +242,11 @@ export function useSimulation() {
       const limit = maxFor(type, result)
       if (usedCapacity(type, result[type]) >= limit) continue
 
-      const filled     = ENTITY_TYPES.flatMap((t) => result[t].map((s) => s.entity))
+      const filled = ENTITY_TYPES.flatMap((t) => result[t].map((s) => s.entity))
       const typeBudget = fillBudget + floor[type]
 
       const filtered = ENTITIES.filter((e) => {
-        if (e.entity_type !== type)   return false
+        if (e.entity_type !== type) return false
         if (unitCost(e) > typeBudget) return false
         if (blockedIds.has(e.id) && !pinned[type].some((s) => s.entity.id === e.id)) return false
         if (!cachedPairwise(e, filled)) return false
@@ -285,18 +289,18 @@ export function useSimulation() {
           // Pass 1: increment existing entities ก่อน (same-brand priority)
           // Pass 2: add new entities ถ้ายังมีที่ว่าง
           let typeRemaining = typeBudget
-          const dynCapCfg  = DYNAMIC_MAX_PER_TYPE[type]
-          const capAttr    = dynCapCfg?.capacity_attribute  // อาจเป็น undefined ถ้า type ไม่มี
+          const dynCapCfg = DYNAMIC_MAX_PER_TYPE[type]
+          const capAttr = dynCapCfg?.capacity_attribute  // อาจเป็น undefined ถ้า type ไม่มี
 
           const fillEntity = (e: Entity, existing: { entity: Entity; quantity: number } | undefined) => {
             if (usedCapacity(type, result[type]) >= limit) return
-            const c        = unitCost(e)
+            const c = unitCost(e)
             // capPerKit = จำนวน unit ต่อ 1 item เช่น RAM kit = 2 modules
             // ถ้าไม่มี capAttr → capPerKit = 1 (นับเป็น item ปกติ)
             const capPerKit = capAttr ? Number(e.attributes[capAttr] ?? 1) : 1
-            const rem_cap   = remainingCapacity(type, result[type], limit)
+            const rem_cap = remainingCapacity(type, result[type], limit)
             const slotsLeft = capPerKit > 0 ? Math.floor(rem_cap / capPerKit) : rem_cap
-            const maxQty    = c > 0 ? Math.min(slotsLeft, Math.floor(typeRemaining / c)) : slotsLeft > 0 ? 1 : 0
+            const maxQty = c > 0 ? Math.min(slotsLeft, Math.floor(typeRemaining / c)) : slotsLeft > 0 ? 1 : 0
             if (maxQty < 1) return
             let qty = maxQty
             if (AGGREGATE_GUARD_TYPES.includes(type) && !passesAggregateWithQty(result, type, e, qty)) {
@@ -305,9 +309,9 @@ export function useSimulation() {
               if (qty < 1) return
             }
             if (existing) {
-                      existing.quantity += qty
+              existing.quantity += qty
             } else {
-                      result[type].push({ entity: e, quantity: qty })
+              result[type].push({ entity: e, quantity: qty })
             }
             if (c > 0) typeRemaining -= c * qty
           }
@@ -332,7 +336,7 @@ export function useSimulation() {
         for (const e of sorted) {
           if (result[type].length >= limit) break
           if (result[type].some((s) => s.entity.id === e.id)) continue  // dedup: ข้าม entity ที่มีแล้ว
-          if (unitCost(e) > typeRemaining)  continue
+          if (unitCost(e) > typeRemaining) continue
           if (AGGREGATE_GUARD_TYPES.includes(type)) {
             if (!passesAggregateWithQty(result, type, e, 1)) continue
           }
@@ -383,14 +387,14 @@ export function useSimulation() {
     if (simulationItems.value.length < 2) return null
     const primaryRule = RULES.find((r) => r.code === AGGREGATE_DISPLAY.primary && r.is_active)
     if (primaryRule) {
-      const found = runAggregate(primaryRule, simulationItems.value, {})
-      if (found.length > 0) return found[0].detail ?? null
+      const detail = getAggregateDetail(primaryRule, simulationItems.value, {})
+      if (detail !== null) return detail
     }
     if (AGGREGATE_DISPLAY.safety) {
       const safetyRule = RULES.find((r) => r.code === AGGREGATE_DISPLAY.safety && r.is_active)
       if (safetyRule) {
-        const found = runAggregate(safetyRule, simulationItems.value, {})
-        if (found.length > 0) return found[0].detail ?? null
+        const detail = getAggregateDetail(safetyRule, simulationItems.value, {})
+        if (detail !== null) return detail
       }
     }
     return null
@@ -473,12 +477,12 @@ export function useSimulation() {
   // ─── Actions ──────────────────────────────────────────────────
 
   function pin(type: EntityType, entity: Entity | null): void {
-    pinned[type]   = entity ? [{ entity, quantity: 1 }] : []
+    pinned[type] = entity ? [{ entity, quantity: 1 }] : []
     excluded[type] = false
   }
 
   function pinItems(type: EntityType, items: SlotItem[]): void {
-    pinned[type]   = items
+    pinned[type] = items
     excluded[type] = false
   }
 
@@ -493,7 +497,7 @@ export function useSimulation() {
     if (value) pinned[type] = []
   }
 
-  function blockEntity(entityId: number): void  { blockedIds.add(entityId) }
+  function blockEntity(entityId: number): void { blockedIds.add(entityId) }
   function unblockEntity(entityId: number): void { blockedIds.delete(entityId) }
 
   function clearAll(): void {

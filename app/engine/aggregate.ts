@@ -6,13 +6,10 @@ import type {
 } from '~/data/types'
 import { render } from '~/engine/template'
 
-// ─── computeAggregate ────────────────────────────────────────────
-
 function computeAggregate(
   cfg: AggregateCondition['aggregate'],
   items: SimulationItem[],
 ): number {
-  // filter items by from_types / exclude_types
   const filtered = items.filter((item) => {
     const t = item.entity.entity_type
     if (cfg.from_types[0] !== '*' && !cfg.from_types.includes(t)) return false
@@ -20,8 +17,6 @@ function computeAggregate(
     return true
   })
 
-  // extract attribute value with fallback_attributes support
-  // also handles nested { value, unit, si_value } structure
   const extractVal = (item: SimulationItem): number => {
     const attrs  = [cfg.attribute, ...(cfg.fallback_attributes ?? [])]
     const entity = item.entity
@@ -44,15 +39,16 @@ function computeAggregate(
 
   switch (cfg.function) {
     case 'sum':   return values.reduce((a, b) => a + b, 0)
-    case 'count': return values.length
+    case 'count':
+      return cfg.multiply_by_quantity
+        ? filtered.reduce((a, item) => a + item.quantity, 0)
+        : filtered.length
     case 'max':   return Math.max(...values)
     case 'min':   return Math.min(...values)
     case 'avg':   return values.reduce((a, b) => a + b, 0) / values.length
     default:      return 0
   }
 }
-
-// ─── resolveCapacity ─────────────────────────────────────────────
 
 function resolveCapacity(
   cfg: AggregateCondition['compare_to'],
@@ -81,10 +77,17 @@ function resolveCapacity(
   }
 
   if (base === null) return null
-  return cfg.safety_factor ? base * cfg.safety_factor : base
-}
 
-// ─── compare ─────────────────────────────────────────────────────
+  if (cfg.safety_factor !== undefined) {
+    if (cfg.safety_factor <= 0 || cfg.safety_factor > 1) {
+      console.warn(`[aggregate] safety_factor=${cfg.safety_factor} must be in (0, 1] — ignored`)
+      return base
+    }
+    return base * cfg.safety_factor
+  }
+
+  return base
+}
 
 function compare(agg: number, op: string, cap: number): boolean {
   switch (op) {
@@ -93,11 +96,30 @@ function compare(agg: number, op: string, cap: number): boolean {
     case '<':  return agg <  cap
     case '>':  return agg >  cap
     case '==': return agg === cap
-    default:   return true
+    default:
+      console.error(`[aggregate] Unknown operator "${op}" — treating as FAIL`)
+      return false
   }
 }
 
-// ─── Public API ──────────────────────────────────────────────────
+// คืน detail เสมอไม่ว่า rule จะ pass หรือ fail (ใช้สำหรับแสดง power bar)
+export function getAggregateDetail(
+  rule: CompatibilityRule,
+  items: SimulationItem[],
+  constraints: Record<string, unknown>,
+): { aggregate_value: number; capacity_value: number; utilization_pct: number } | null {
+  const cond     = rule.condition as AggregateCondition
+  const aggValue = computeAggregate(cond.aggregate, items)
+  const capValue = resolveCapacity(cond.compare_to, items, constraints)
+
+  if (capValue === null) return null
+
+  const utilizationPct = capValue > 0
+    ? Math.round((aggValue / capValue) * 100 * 10) / 10
+    : 0
+
+  return { aggregate_value: aggValue, capacity_value: capValue, utilization_pct: utilizationPct }
+}
 
 export function runAggregate(
   rule: CompatibilityRule,
@@ -109,7 +131,7 @@ export function runAggregate(
   const aggValue = computeAggregate(cond.aggregate, items)
   const capValue = resolveCapacity(cond.compare_to, items, constraints)
 
-  if (capValue === null) return [] // ไม่มี capacity entity → skip
+  if (capValue === null) return []
 
   const passed = compare(aggValue, cond.operator, capValue)
   if (passed) return []
@@ -118,8 +140,6 @@ export function runAggregate(
     ? Math.round((aggValue / capValue) * 100 * 10) / 10
     : 0
 
-  // template context — ตรงกับ Issue Object ใน spec section 8
-  // rule.message ใช้ :aggregate_value, :capacity_value, :utilization_pct
   const ctx: Record<string, unknown> = {
     aggregate_value:  aggValue,
     capacity_value:   capValue,

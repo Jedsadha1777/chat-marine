@@ -2,7 +2,6 @@ import type { CompatibilityRule } from '~/data/types'
 
 export const RULES: CompatibilityRule[] = [
 
-  // ─── Pairwise: socket match ───────────────────────────────────
   {
     id:         1,
     code:       'SOCKET_MATCH',
@@ -25,7 +24,6 @@ export const RULES: CompatibilityRule[] = [
     resolution: 'เลือก CPU และ Motherboard ที่ใช้ socket เดียวกัน',
   },
 
-  // ─── Pairwise: RAM type match ─────────────────────────────────
   {
     id:         2,
     code:       'RAM_TYPE_MATCH',
@@ -49,7 +47,6 @@ export const RULES: CompatibilityRule[] = [
     resolution: 'เลือก RAM ที่ตรงกับ type ของ Motherboard',
   },
 
-  // ─── Pairwise: RAM modules ≤ MB slots ────────────────────────
   {
     id:         3,
     code:       'RAM_SLOT_FIT',
@@ -73,7 +70,6 @@ export const RULES: CompatibilityRule[] = [
     resolution: 'เลือก RAM ที่มีจำนวนโมดูลไม่เกิน slot ของ Motherboard',
   },
 
-  // ─── Pairwise: CPU TDP ≤ MB tdp_support ──────────────────────
   {
     id:         4,
     code:       'CPU_TDP_SUPPORT',
@@ -97,7 +93,32 @@ export const RULES: CompatibilityRule[] = [
     resolution: 'เลือก Motherboard ที่รองรับ TDP ของ CPU',
   },
 
-  // ─── Aggregate: Power capacity (error) ───────────────────────
+  {
+    id:         7,
+    code:       'AGG_RAM_SLOTS',
+    name:       'Total RAM Modules Must Not Exceed Motherboard Slots',
+    check_type: 'aggregate',
+    severity:   'error',
+    priority:   195,
+    is_active:  true,
+    condition: {
+      aggregate: {
+        function:             'sum',
+        attribute:            'modules',
+        from_types:           ['ram'],
+        multiply_by_quantity: true,
+      },
+      compare_to: {
+        mode:        'entity_attribute',
+        entity_type: 'motherboard',
+        attribute:   'ram_slots',
+      },
+      operator: '<=',
+    },
+    message:    'RAM รวม :aggregate_value โมดูล เกิน Motherboard ที่มี :capacity_value slot',
+    resolution: 'ลดจำนวน RAM kit หรือเลือก Motherboard ที่มี slot มากกว่านี้',
+  },
+
   {
     id:         5,
     code:       'AGG_POWER_CAPACITY',
@@ -126,7 +147,6 @@ export const RULES: CompatibilityRule[] = [
     resolution: 'เลือก PSU ที่มี wattage สูงกว่า :aggregate_value W',
   },
 
-  // ─── Aggregate: Power safety 80% (warning) ───────────────────
   {
     id:         6,
     code:       'AGG_POWER_SAFETY',

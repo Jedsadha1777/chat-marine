@@ -1,9 +1,6 @@
 import type { CompatibilityRule, Entity, ValidationIssue } from '~/data/types'
 import { render } from '~/engine/template'
 
-// ─── JSON Logic evaluator ─────────────────────────────────────────
-// Supports: ==, !=, <=, >=, <, >, in, and, or, not, var
-
 function evalLogic(logic: unknown, data: Record<string, unknown>): boolean {
   if (typeof logic !== 'object' || logic === null) return Boolean(logic)
 
@@ -25,8 +22,20 @@ function evalLogic(logic: unknown, data: Record<string, unknown>): boolean {
   }
 
   switch (op) {
-    case '==':  return resolve(args[0]) == resolve(args[1])
-    case '!=':  return resolve(args[0]) != resolve(args[1])
+    case '==': {
+      const a = resolve(args[0])
+      const b = resolve(args[1])
+      if (Array.isArray(a)) return a.includes(b)
+      if (Array.isArray(b)) return b.includes(a)
+      return a === b
+    }
+    case '!=': {
+      const a = resolve(args[0])
+      const b = resolve(args[1])
+      if (Array.isArray(a)) return !a.includes(b)
+      if (Array.isArray(b)) return !b.includes(a)
+      return a !== b
+    }
     case '<=':  return Number(resolve(args[0])) <= Number(resolve(args[1]))
     case '>=':  return Number(resolve(args[0])) >= Number(resolve(args[1]))
     case '<':   return Number(resolve(args[0])) <  Number(resolve(args[1]))
@@ -39,13 +48,11 @@ function evalLogic(logic: unknown, data: Record<string, unknown>): boolean {
     case 'and': return (args as unknown[]).every((a) => evalLogic(a, data))
     case 'or':  return (args as unknown[]).some((a)  => evalLogic(a, data))
     case 'not': return !evalLogic(args[0], data)
-    default:    return true
+    default:
+      console.error(`[pairwise] Unknown operator "${op}" — treating as FAIL`)
+      return false
   }
 }
-
-// ─── Scope-based entity pre-filter ───────────────────────────────
-// Pre-filter ก่อนเข้า loop เพื่อลด pairs จาก O(n²) เต็ม
-// เหลือเฉพาะคู่ที่ scope กำหนด
 
 interface ScopedPairs {
   sources: Entity[]
@@ -56,19 +63,16 @@ function getScopedPairs(rule: CompatibilityRule, entities: Entity[]): ScopedPair
   const scope = rule.scope
 
   if (!scope) {
-    // ไม่มี scope → ทุก entity เป็นได้ทั้ง source และ target
     return { sources: entities, targets: entities }
   }
 
   switch (scope.match_by) {
     case 'shared_attribute': {
-      // ทั้งสองต้องมี attribute เดียวกัน → filter เฉพาะตัวที่มี attribute นั้น
       const key = scope.attribute_key!
       const eligible = entities.filter((e) => key in e.attributes)
       return { sources: eligible, targets: eligible }
     }
     case 'attribute_pair': {
-      // source ต้องมี source_attribute, target ต้องมี target_attribute
       const srcAttr = scope.source_attribute!
       const tgtAttr = scope.target_attribute!
       return {
@@ -77,7 +81,6 @@ function getScopedPairs(rule: CompatibilityRule, entities: Entity[]): ScopedPair
       }
     }
     case 'attribute_range': {
-      // source อยู่ใน min-max ของ target → ทุก entity เป็นได้ทั้งคู่
       return { sources: entities, targets: entities }
     }
     default:
@@ -85,16 +88,13 @@ function getScopedPairs(rule: CompatibilityRule, entities: Entity[]): ScopedPair
   }
 }
 
-// ─── Public API ──────────────────────────────────────────────────
-
 export function runPairwise(
   rule: CompatibilityRule,
   entities: Entity[],
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = []
-
-  // Pre-filter entities ตาม scope ก่อน — ลด pairs ที่ต้อง evaluate
   const { sources, targets } = getScopedPairs(rule, entities)
+  const seenPairs = new Set<string>()
 
   for (const source of sources) {
     for (const target of targets) {
@@ -103,14 +103,11 @@ export function runPairwise(
       const passed = evalLogic(rule.condition, { source, target })
 
       if (!passed) {
-        // dedup: A→B กับ B→A แสดงแค่ครั้งเดียว
-        const dup = issues.some(
-          (iss) =>
-            iss.rule_code === rule.code &&
-            iss.detail?.source_entity === target.name &&
-            iss.detail?.target_entity === source.name,
-        )
-        if (dup) continue
+        const lo = Math.min(source.id, target.id)
+        const hi = Math.max(source.id, target.id)
+        const pairKey = `${rule.code}:${lo}:${hi}`
+        if (seenPairs.has(pairKey)) continue
+        seenPairs.add(pairKey)
 
         issues.push({
           rule_code:  rule.code,
