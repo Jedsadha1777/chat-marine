@@ -36,6 +36,8 @@ export const RULES: CompatibilityRule[] = [
       match_by:         'attribute_pair',
       source_attribute: 'ram_type',
       target_attribute: 'ram_type',
+      source_types:     ['ram'],
+      target_types:     ['motherboard'],
     },
     condition: {
       '==': [
@@ -143,7 +145,7 @@ export const RULES: CompatibilityRule[] = [
       },
       operator: '<=',
     },
-    message:    'พลังงานรวม :aggregate_value W เกิน PSU :capacity_value W (:utilization_pct|round(1)%)',
+    message: 'พลังงานรวม :aggregate_value W เกิน 80% ของ PSU',
     resolution: 'เลือก PSU ที่มี wattage สูงกว่า :aggregate_value W',
   },
 

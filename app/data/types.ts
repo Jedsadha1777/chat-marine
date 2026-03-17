@@ -51,6 +51,8 @@ export interface PairwiseScope {
   attribute_key?: string
   source_attribute?: string
   target_attribute?: string
+  source_types?: string[]   // filter source entities 
+  target_types?: string[]   // filter target entities 
 }
 
 export interface AggregateConfig {
