@@ -366,8 +366,9 @@ export function useSimulation() {
   )
 
   const budgetUsedPct = computed(() =>
-    budget.value ? Math.min((totalCost.value / budget.value) * 100, 100) : 0,
+    budget.value ? (totalCost.value / budget.value) * 100 : 0,
   )
+
 
   const issues = computed((): ValidationIssue[] => {
     if (simulationItems.value.length < 2) return []

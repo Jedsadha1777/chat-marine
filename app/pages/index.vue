@@ -115,7 +115,7 @@ const powerAgg = computed(() => aggregateDetail.value?.aggregate_value ?? null)
 const powerCap = computed(() => aggregateDetail.value?.capacity_value  ?? null)
 const powerPct = computed(() => {
   if (!powerAgg.value || !powerCap.value || powerCap.value === 0) return 0
-  return Math.min((powerAgg.value / powerCap.value) * 100, 100)
+  return (powerAgg.value / powerCap.value) * 100
 })
 </script>
 <template>
