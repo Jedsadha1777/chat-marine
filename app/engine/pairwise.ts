@@ -94,7 +94,14 @@ function getScopedPairs(rule: CompatibilityRule, entities: Entity[]): ScopedPair
       }
     }
     case 'attribute_range': {
-      return { sources: entities, targets: entities }
+      return {
+        sources: scope.source_types
+          ? entities.filter((e) => scope.source_types!.includes(e.entity_type))
+          : entities,
+        targets: scope.target_types
+          ? entities.filter((e) => scope.target_types!.includes(e.entity_type))
+          : entities,
+      }
     }
     default:
       return { sources: [], targets: [] }
