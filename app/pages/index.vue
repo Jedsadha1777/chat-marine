@@ -217,10 +217,7 @@ const powerPct = computed(() => {
                       <!-- รายการ entity -->
                       <div v-for="entity in compatibleEntitiesFor(type)" :key="entity.id"
                         class="pick-row"
-                        :class="{
-                          'pick-active':   pinned[type].some((s) => s.entity.id === entity.id),
-                          'pick-disabled': !pinned[type].some((s) => s.entity.id === entity.id) && !canAddToSlot(type, entity),
-                        }">
+                        :class="{ 'pick-active': pinned[type].some((s) => s.entity.id === entity.id) }">
                         <span class="pick-name" @click="selectPin(type, entity)">
                           {{ entity.name }}
                         </span>
@@ -392,7 +389,6 @@ html, body {
   padding: 8px 10px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; }
 .pick-row:hover { background: #f0f0f0; }
 .pick-row.pick-active { background: #eaf0ff; border-color: #4477dd; }
-.pick-row.pick-disabled { opacity: 0.5; }
 .pick-row-exclude:hover { background: #fff0f0; }
 .pick-row-exclude.pick-active { background: #ffe8e8; border-color: #cc3333; }
 .pick-divider { height: 1px; background: #ddd; margin: 4px 0; }
