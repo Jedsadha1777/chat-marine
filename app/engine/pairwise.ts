@@ -69,8 +69,15 @@ function getScopedPairs(rule: CompatibilityRule, entities: Entity[]): ScopedPair
   switch (scope.match_by) {
     case 'shared_attribute': {
       const key = scope.attribute_key!
-      const eligible = entities.filter((e) => key in e.attributes)
-      return { sources: eligible, targets: eligible }
+      const sources = entities.filter((e) =>
+        key in e.attributes &&
+        (!scope.source_types || scope.source_types.includes(e.entity_type)),
+      )
+      const targets = entities.filter((e) =>
+        key in e.attributes &&
+        (!scope.target_types || scope.target_types.includes(e.entity_type)),
+      )
+      return { sources, targets }
     }
     case 'attribute_pair': {
       const srcAttr = scope.source_attribute!

@@ -24,14 +24,10 @@ import {
   COST_PRECISION,
 } from '~/composables/simulationConfig'
 
-// ─── SlotItem ─────────────────────────────────────────────────────
-
 export interface SlotItem {
   entity: Entity
   quantity: number
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────
 
 function unitCost(e: Entity): number {
   const raw = e.attributes[COST_ATTRIBUTE] ?? 0
@@ -68,10 +64,7 @@ function emptySlots(): Record<EntityType, SlotItem[]> {
 }
 
 function maxFor(type: EntityType, slots?: Record<EntityType, SlotItem[]>): number {
-  // static limit ก่อน
   if (MAX_PER_TYPE[type] !== undefined) return MAX_PER_TYPE[type]!
-
-  // dynamic limit — อ่านจาก entity อีกตัว
   const dynCfg = DYNAMIC_MAX_PER_TYPE[type]
   if (dynCfg && slots) {
     const sourceItems = slots[dynCfg.source_type]
@@ -81,7 +74,6 @@ function maxFor(type: EntityType, slots?: Record<EntityType, SlotItem[]>): numbe
     }
     return dynCfg.fallback
   }
-
   return Infinity
 }
 
@@ -101,10 +93,9 @@ function remainingCapacity(type: EntityType, items: { entity: Entity; quantity: 
   return limit - usedCapacity(type, items)
 }
 
-
 interface FloorResult {
   floor: Record<EntityType, number>
-  overflow: boolean  // true = floor รวมเกิน budget — ควรแจ้งเตือน user
+  overflow: boolean
 }
 
 function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult {
@@ -112,7 +103,6 @@ function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult
     ENTITY_TYPES.map((t) => [t, totalBudget * (BUDGET_FLOOR_PER_TYPE[t] ?? 0)]),
   ) as Record<EntityType, number>
 
-  // ตรวจ hard min รวม
   const totalHardMin = freeTypes.reduce((s, t) => s + (HARD_FLOOR_MIN[t] ?? 0), 0)
   const overflow = totalHardMin > totalBudget
 
@@ -171,9 +161,7 @@ export function useSimulation() {
     Object.fromEntries(ENTITY_TYPES.map((t) => [t, false])) as Record<EntityType, boolean>,
   )
   const blockedIds = reactive<Set<number>>(new Set())
-  const floorOverflow = ref(false)  
-
-  // ─── Aggregate check ──────────────────────────────────────────
+  const floorOverflow = ref(false)
 
   function passesAggregate(items: SimulationItem[]): boolean {
     return RULES.filter(
@@ -193,8 +181,6 @@ export function useSimulation() {
     }
     return passesAggregate(toSimItems(testSlots))
   }
-
-  // ─── Suggestion engine ────────────────────────────────────────
 
   const suggestion = computed((): Record<EntityType, SlotItem[]> => {
     const result = emptySlots()
@@ -217,15 +203,13 @@ export function useSimulation() {
         overflow: false,
       }
 
-
-    floorOverflow.value = overflow  // #2: expose ให้ UI แสดง warning
+    floorOverflow.value = overflow
 
     const totalFloor = freeTypes.reduce((s, t) => s + floor[t], 0)
     let fillBudget = Math.max(0, remaining - totalFloor)
 
     for (const type of FILL_ORDER) {
       if (excluded[type]) continue
-      // ถ้า user pin ไว้แล้ว → เคารพ choice ไม่ auto-fill เพิ่ม
       if (pinned[type].length > 0) continue
       const limit = maxFor(type, result)
       if (usedCapacity(type, result[type]) >= limit) continue
@@ -271,18 +255,13 @@ export function useSimulation() {
           if (isFinite(spent)) fillBudget = Math.max(0, fillBudget - Math.max(0, spent - floor[type]))
 
         } else {
-          // sequential stack — 2 pass:
-          // Pass 1: increment existing entities ก่อน (same-brand priority)
-          // Pass 2: add new entities ถ้ายังมีที่ว่าง
           let typeRemaining = typeBudget
           const dynCapCfg = DYNAMIC_MAX_PER_TYPE[type]
-          const capAttr = dynCapCfg?.capacity_attribute  // อาจเป็น undefined ถ้า type ไม่มี
+          const capAttr = dynCapCfg?.capacity_attribute
 
           const fillEntity = (e: Entity, existing: { entity: Entity; quantity: number } | undefined) => {
             if (usedCapacity(type, result[type]) >= limit) return
             const c = unitCost(e)
-            // capPerKit = จำนวน unit ต่อ 1 item เช่น RAM kit = 2 modules
-            // ถ้าไม่มี capAttr → capPerKit = 1 (นับเป็น item ปกติ)
             const capPerKit = capAttr ? Number(e.attributes[capAttr] ?? 1) : 1
             const rem_cap = remainingCapacity(type, result[type], limit)
             const slotsLeft = capPerKit > 0 ? Math.floor(rem_cap / capPerKit) : rem_cap
@@ -302,11 +281,6 @@ export function useSimulation() {
             if (c > 0) typeRemaining -= c * qty
           }
 
-          // Pass 1: entities ที่ user pin ไว้ — ห้าม increment, engine เคารพ qty ที่ user เลือก
-          // ข้าม: engine จะ fill ที่เหลือจาก Pass 2 เท่านั้น
-          // (ถ้าต้องการเพิ่ม qty ของ pinned entity user ต้องกด + เอง)
-
-          // Pass 2: entities ใหม่ที่ยังไม่อยู่ใน result
           for (const e of sorted) {
             if (result[type].some((s) => s.entity.id === e.id)) continue
             fillEntity(e, undefined)
@@ -317,11 +291,10 @@ export function useSimulation() {
         }
 
       } else {
-        // unique mode
         let typeRemaining = typeBudget
         for (const e of sorted) {
           if (result[type].length >= limit) break
-          if (result[type].some((s) => s.entity.id === e.id)) continue  // dedup: ข้าม entity ที่มีแล้ว
+          if (result[type].some((s) => s.entity.id === e.id)) continue
           if (unitCost(e) > typeRemaining) continue
           if (AGGREGATE_GUARD_TYPES.includes(type)) {
             if (!passesAggregateWithQty(result, type, e, 1)) continue
@@ -337,10 +310,7 @@ export function useSimulation() {
     return result
   })
 
-  // ─── Computed ─────────────────────────────────────────────────
-
   const simulationItems = computed((): SimulationItem[] => toSimItems(suggestion.value))
-
   const selectedEntities = computed((): Entity[] => simulationItems.value.map((i) => i.entity))
 
   const totalCost = computed(() =>
@@ -354,7 +324,6 @@ export function useSimulation() {
   const budgetUsedPct = computed(() =>
     budget.value ? (totalCost.value / budget.value) * 100 : 0,
   )
-
 
   const issues = computed((): ValidationIssue[] => {
     if (simulationItems.value.length < 2) return []
@@ -403,8 +372,6 @@ export function useSimulation() {
     )
   })
 
-  // ─── compatibleEntitiesFor ────────────────────────────────────
-
   function compatibleEntitiesFor(type: EntityType): Entity[] {
     const currentEntities = uniqueEntities(
       ENTITY_TYPES
@@ -418,12 +385,10 @@ export function useSimulation() {
     })
   }
 
-  // ─── slotLimit ───────────────────────────────────────────────
   function slotLimit(type: EntityType): number {
     return maxFor(type, suggestion.value)
   }
 
-  // ─── canAddToSlot ────────────────────────────────────────────
   function canAddToSlot(type: EntityType, entity: Entity): boolean {
     const dynCfg = DYNAMIC_MAX_PER_TYPE[type]
     if (!dynCfg) {
@@ -436,14 +401,15 @@ export function useSimulation() {
       suggestion.value[dynCfg.source_type][0] ??
       (pinned[dynCfg.source_type][0] ?? null)
 
-    if (!srcSlot) return false 
+    if (!srcSlot) return false
 
     const capacity = Number(srcSlot.entity.attributes[dynCfg.source_attribute] ?? 0)
     if (!capacity) return false
 
     const capAttr = dynCfg.capacity_attribute ?? 'modules'
 
-    const usedModules = suggestion.value[type].reduce((sum, s) => {
+    // BUG-01 fix: อ่านจาก pinned ไม่ใช่ suggestion
+    const usedModules = pinned[type].reduce((sum, s) => {
       const mod = Number(s.entity.attributes[capAttr] ?? 1)
       return sum + mod * s.quantity
     }, 0)
@@ -451,8 +417,6 @@ export function useSimulation() {
 
     return usedModules + newModules <= capacity
   }
-
-  // ─── Actions ──────────────────────────────────────────────────
 
   function pin(type: EntityType, entity: Entity | null): void {
     pinned[type] = entity ? [{ entity, quantity: 1 }] : []
