@@ -36,6 +36,8 @@ export const RULES: CompatibilityRule[] = [
       match_by:         'attribute_pair',
       source_attribute: 'ram_type',
       target_attribute: 'ram_type',
+      source_types:     ['ram'],
+      target_types:     ['motherboard'],
     },
     condition: {
       '==': [

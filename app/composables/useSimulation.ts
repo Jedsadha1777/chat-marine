@@ -90,9 +90,6 @@ function uniqueEntities(entities: Entity[]): Entity[] {
   return entities.filter((e) => { if (seen.has(e.id)) return false; seen.add(e.id); return true })
 }
 
-// คำนวณ capacity ที่ใช้ไปแล้วใน slot
-// ถ้า type มี capacity_attribute (เช่น ram.modules) → นับเป็น module count
-// ถ้าไม่มี → นับเป็น kit count ปกติ
 function usedCapacity(type: EntityType, items: { entity: Entity; quantity: number }[]): number {
   const dynCfg = DYNAMIC_MAX_PER_TYPE[type]
   if (!dynCfg?.capacity_attribute) return items.length
@@ -100,13 +97,10 @@ function usedCapacity(type: EntityType, items: { entity: Entity; quantity: numbe
   return items.reduce((sum, s) => sum + Number(s.entity.attributes[attr] ?? 1) * s.quantity, 0)
 }
 
-// capacity ที่เหลือ ใน unit เดียวกับ maxFor (module หรือ kit)
 function remainingCapacity(type: EntityType, items: { entity: Entity; quantity: number }[], limit: number): number {
   return limit - usedCapacity(type, items)
 }
 
-// ─── #2 fix: Floor validation + hard minimum ─────────────────────
-// คืนค่า floor และ warning ถ้า hardMin รวมกันเกิน budget
 
 interface FloorResult {
   floor: Record<EntityType, number>
@@ -131,7 +125,6 @@ function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult
       ENTITY_TYPES.map((t) => {
         const hardMin = HARD_FLOOR_MIN[t] ?? 0
         const scaled = raw[t] * scale
-        // #2 fix: hard min มีผล แต่รวมทุก type แล้วต้องไม่เกิน totalBudget
         return [t, Math.min(totalBudget, Math.max(hardMin, scaled))]
       }),
     ) as Record<EntityType, number>
@@ -144,9 +137,6 @@ function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult
   return { floor, overflow }
 }
 
-// ─── #3 fix: Module-level pairwise cache ─────────────────────────
-// Cache อยู่ระดับ module — ไม่ถูกล้างเมื่อ budget เปลี่ยน
-// ล้างเฉพาะเมื่อ RULES หรือ ENTITIES เปลี่ยน (ไม่เกิดขึ้น runtime)
 const _pwCache = new Map<string, boolean>()
 
 function cachedPairwise(candidate: Entity, others: Entity[]): boolean {
@@ -181,7 +171,7 @@ export function useSimulation() {
     Object.fromEntries(ENTITY_TYPES.map((t) => [t, false])) as Record<EntityType, boolean>,
   )
   const blockedIds = reactive<Set<number>>(new Set())
-  const floorOverflow = ref(false)  // #2: แจ้งเตือน UI เมื่อ hard floor เกิน budget
+  const floorOverflow = ref(false)  
 
   // ─── Aggregate check ──────────────────────────────────────────
 
@@ -191,8 +181,6 @@ export function useSimulation() {
     ).every((rule) => runAggregate(rule, items, {}).length === 0)
   }
 
-  // ─── #5 fix: Aggregate guard with final quantity ──────────────
-  // ทดสอบด้วย quantity จริงที่จะเพิ่ม ไม่ใช่แค่ 1 ชิ้น
   function passesAggregateWithQty(
     result: Record<EntityType, SlotItem[]>,
     type: EntityType,
@@ -270,7 +258,6 @@ export function useSimulation() {
               if (result[type].length >= limit) break
               const c = unitCost(e)
               if (c > 0 && c > typeRemaining) continue
-              // #5 fix: เช็ค aggregate ด้วย quantity จริงก่อนเพิ่ม
               if (AGGREGATE_GUARD_TYPES.includes(type)) {
                 if (!passesAggregateWithQty(result, type, e, 1)) continue
               }
@@ -432,40 +419,30 @@ export function useSimulation() {
   }
 
   // ─── slotLimit ───────────────────────────────────────────────
-  // ใช้ maxFor เดียวกับ engine — component ไม่ต้อง reimplement
-
   function slotLimit(type: EntityType): number {
     return maxFor(type, suggestion.value)
   }
 
   // ─── canAddToSlot ────────────────────────────────────────────
-  // ตรวจว่าเพิ่ม entity ใหม่ 1 kit เข้า slot ได้ไหม
-  // คำนวณโดยตรงจาก pinned[type] + entity ที่จะเพิ่ม
-  // เทียบกับ capacity attribute ของ source entity (เช่น MB.ram_slots)
-  // ไม่พึ่ง aggregate engine เพราะ capacity entity อาจไม่อยู่ใน simulation
-
   function canAddToSlot(type: EntityType, entity: Entity): boolean {
     const dynCfg = DYNAMIC_MAX_PER_TYPE[type]
     if (!dynCfg) {
-      // ไม่มี dynamic config → ใช้ static limit
       const staticLimit = MAX_PER_TYPE[type]
       if (staticLimit === undefined) return true
       return pinned[type].length < staticLimit
     }
 
-    // หา capacity entity จาก suggestion (มี MB แน่นอนถ้าถูก fill)
     const srcSlot =
       suggestion.value[dynCfg.source_type][0] ??
       (pinned[dynCfg.source_type][0] ?? null)
 
-    if (!srcSlot) return false  // ไม่มี MB → block
+    if (!srcSlot) return false 
 
     const capacity = Number(srcSlot.entity.attributes[dynCfg.source_attribute] ?? 0)
     if (!capacity) return false
 
     const capAttr = dynCfg.capacity_attribute ?? 'modules'
 
-    // นับจาก suggestion.value — รวม auto-fill ด้วย ไม่ใช่แค่ pinned
     const usedModules = suggestion.value[type].reduce((sum, s) => {
       const mod = Number(s.entity.attributes[capAttr] ?? 1)
       return sum + mod * s.quantity

@@ -36,17 +36,17 @@ function evalLogic(logic: unknown, data: Record<string, unknown>): boolean {
       if (Array.isArray(b)) return !b.includes(a)
       return a !== b
     }
-    case '<=': return Number(resolve(args[0])) <= Number(resolve(args[1]))
-    case '>=': return Number(resolve(args[0])) >= Number(resolve(args[1]))
-    case '<': return Number(resolve(args[0])) < Number(resolve(args[1]))
-    case '>': return Number(resolve(args[0])) > Number(resolve(args[1]))
+    case '<=':  return Number(resolve(args[0])) <= Number(resolve(args[1]))
+    case '>=':  return Number(resolve(args[0])) >= Number(resolve(args[1]))
+    case '<':   return Number(resolve(args[0])) <  Number(resolve(args[1]))
+    case '>':   return Number(resolve(args[0])) >  Number(resolve(args[1]))
     case 'in': {
-      const needle = resolve(args[0])
+      const needle   = resolve(args[0])
       const haystack = resolve(args[1])
       return Array.isArray(haystack) ? haystack.includes(needle) : haystack === needle
     }
     case 'and': return (args as unknown[]).every((a) => evalLogic(a, data))
-    case 'or': return (args as unknown[]).some((a) => evalLogic(a, data))
+    case 'or':  return (args as unknown[]).some((a)  => evalLogic(a, data))
     case 'not': return !evalLogic(args[0], data)
     default:
       console.error(`[pairwise] Unknown operator "${op}" — treating as FAIL`)
@@ -116,10 +116,10 @@ export function runPairwise(
         seenPairs.add(pairKey)
 
         issues.push({
-          rule_code: rule.code,
+          rule_code:  rule.code,
           check_type: 'pairwise',
-          severity: rule.severity,
-          message: render(rule.message, { source, target }),
+          severity:   rule.severity,
+          message:    render(rule.message,   { source, target }),
           resolution: rule.resolution
             ? render(rule.resolution, { source, target })
             : undefined,
