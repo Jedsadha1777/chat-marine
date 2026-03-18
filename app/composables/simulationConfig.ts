@@ -156,7 +156,7 @@ export const AGGREGATE_DISPLAY: { primary: string; safety: string | null } = {
  *   Server Rack : ['rack', 'ups']
  *   ระบบท่อน้ำ  : ['pump', 'tank']
  */
-export const REQUIRED_TYPES: EntityType[] = ['cpu', 'motherboard', 'psu']
+export const REQUIRED_TYPES: EntityType[] = ['cpu', 'motherboard', 'ram', 'psu']
 
 /**
  * attribute key ที่ใช้เป็นราคาของ entity
