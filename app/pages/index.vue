@@ -2,11 +2,12 @@
 import type { Entity } from '~/data/types'
 import type { SlotItem } from '~/composables/useSimulation'
 import { ENTITY_TYPE_LABELS, type EntityType } from '~/data/entities'
-import { COST_ATTRIBUTE, COST_PRECISION } from '~/composables/simulationConfig'
+
 
 const {
   budget,
   pinned,
+  slotCost,
   suggestion,
   totalCost,
   budgetRemaining,
@@ -96,10 +97,7 @@ const currencyFmt = new Intl.NumberFormat('th-TH', {
 function fmt(value: number): string { return currencyFmt.format(value) }
 
 function slotTotal(items: SlotItem[]): number {
-  return items.reduce((sum, s) => {
-    const raw = s.entity.attributes[COST_ATTRIBUTE] ?? 0
-    return sum + parseFloat(Number(raw).toFixed(COST_PRECISION)) * s.quantity
-  }, 0)
+  return items.reduce((sum, s) => sum + slotCost(s), 0)
 }
 
 const powerAgg = computed(() => aggregateDetail.value?.aggregate_value ?? null)

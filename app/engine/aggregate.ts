@@ -59,14 +59,15 @@ function resolveCapacity(
 
   switch (cfg.mode) {
     case 'entity_attribute': {
-      // BUG-D fix: sum across all matching entities แทนการใช้แค่ตัวแรก
-      // รองรับ domain ที่มี capacity container มากกว่า 1 ตัว (เช่น 2 UPS)
+      // BUG-1 fix: คูณ quantity เพื่อรองรับ capacity container มากกว่า 1 ตัว (เช่น 2 UPS)
       const matching = items.filter((i) => i.entity.entity_type === cfg.entity_type)
       if (matching.length === 0) return null
       const values = matching
-        .map((i) => i.entity.attributes[cfg.attribute!])
-        .filter((v) => v !== undefined && v !== null)
-        .map(Number)
+        .map((i) => {
+          const raw = i.entity.attributes[cfg.attribute!]
+          return raw !== undefined && raw !== null ? Number(raw) * i.quantity : null
+        })
+        .filter((v) => v !== null) as number[]
       base = values.length > 0 ? values.reduce((a, b) => a + b, 0) : null
       break
     }

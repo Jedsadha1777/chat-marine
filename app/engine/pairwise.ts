@@ -25,6 +25,8 @@ function evalLogic(logic: unknown, data: Record<string, unknown>): boolean {
     case '==': {
       const a = resolve(args[0])
       const b = resolve(args[1])
+      // BUG-5 fix: Array-Array → intersection check (มีค่าร่วมกันอย่างน้อย 1 ตัว)
+      if (Array.isArray(a) && Array.isArray(b)) return a.some((x) => (b as unknown[]).includes(x))
       if (Array.isArray(a)) return a.includes(b)
       if (Array.isArray(b)) return b.includes(a)
       return a === b
@@ -32,6 +34,8 @@ function evalLogic(logic: unknown, data: Record<string, unknown>): boolean {
     case '!=': {
       const a = resolve(args[0])
       const b = resolve(args[1])
+      // BUG-5 fix: Array-Array → ไม่มีค่าร่วมกันเลย
+      if (Array.isArray(a) && Array.isArray(b)) return !a.some((x) => (b as unknown[]).includes(x))
       if (Array.isArray(a)) return !a.includes(b)
       if (Array.isArray(b)) return !b.includes(a)
       return a !== b
@@ -123,9 +127,6 @@ export function runPairwise(
       const passed = evalLogic(rule.condition, { source, target })
 
       if (!passed) {
-        // BUG-E fix: ใช้ key แบบมีทิศทาง (source:target) แทน lo:hi
-        // ป้องกัน pair (A→B) และ (B→A) ถูกรวมเป็น key เดียว
-        // ในกรณี rule ที่ source/target types overlap กัน
         const pairKey = `${rule.code}:${source.id}:${target.id}`
         if (seenPairs.has(pairKey)) continue
         seenPairs.add(pairKey)

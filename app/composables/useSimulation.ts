@@ -129,6 +129,10 @@ function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult
 
 const _pwCache = new Map<string, boolean>()
 
+if (import.meta.hot) {
+  import.meta.hot.accept(() => { _pwCache.clear() })
+}
+
 function cachedPairwise(candidate: Entity, others: Entity[]): boolean {
   const errorRules = RULES.filter(
     (r) => r.is_active && r.check_type === 'pairwise' && r.severity === 'error',
@@ -198,7 +202,7 @@ export function useSimulation() {
     const freeTypes = FILL_ORDER.filter((t) => !excluded[t] && result[t].length === 0)
 
     const { floor, overflow } = budget.value !== null
-      ? computeFloor(budget.value, freeTypes)
+      ? computeFloor(remaining, freeTypes)
       : {
         floor: Object.fromEntries(ENTITY_TYPES.map((t) => [t, 0])) as Record<EntityType, number>,
         overflow: false,
@@ -363,7 +367,7 @@ export function useSimulation() {
   const bom = computed((): BomItem[] => {
     if (!isValid.value) return []
     let line = 0
-    return ENTITY_TYPES.flatMap((t) =>
+    return FILL_ORDER.flatMap((t) =>
       suggestion.value[t].map((s) => {
         line += 10
         return { line_number: line, entity: s.entity, quantity: s.quantity, unit_cost: unitCost(s.entity), total_cost: slotCost(s) }
@@ -446,7 +450,7 @@ export function useSimulation() {
   }
 
   return {
-    budget, pinned, excluded, blockedIds, floorOverflow,
+    budget, pinned, slotCost, excluded, blockedIds, floorOverflow,
     suggestion, selectedEntities, simulationItems,
     totalCost, budgetRemaining, budgetUsedPct,
     issues, aggregateDetail, isValid, bom,
