@@ -43,18 +43,16 @@ export const MAX_PER_TYPE: Partial<Record<EntityType, number>> = {
  *   Server Rack: { server: { source_type: 'rack', source_attribute: 'total_u', fallback: 42 } }
  */
 export const DYNAMIC_MAX_PER_TYPE: Partial<Record<EntityType, {
-  source_type:       EntityType  // entity ที่เป็น capacity (เช่น motherboard)
-  source_attribute:  string      // attribute ที่เป็น limit (เช่น ram_slots)
-  capacity_attribute?: string    // attribute ของ entity ในกลุ่มที่นับต่อ unit (เช่น modules)
-  fallback:          number      // ค่า default ถ้าหา source ไม่เจอ
+  source_type:        EntityType
+  source_attribute:   string
+  capacity_attribute?: string
+  fallback:           number
 }>> = {
-  // ram: ตรวจว่า total modules (modules × qty) ≤ ram_slots ของ MB
-  // capacity_attribute: 'modules' หมายถึงแต่ละ kit มีกี่ module
   ram: {
-    source_type:       'motherboard',
-    source_attribute:  'ram_slots',
+    source_type:        'motherboard',
+    source_attribute:   'ram_slots',
     capacity_attribute: 'modules',
-    fallback:          2,
+    fallback:           2,
   },
 }
 
@@ -101,17 +99,8 @@ export const BUDGET_FLOOR_PER_TYPE: Partial<Record<EntityType, number>> = {
 }
 
 /**
- * slot ที่ต้องผ่าน aggregate rules ก่อนเลือก (capacity containers)
- *
- * ตัวอย่างอื่น:
- *   Server Rack : ['ups']
- *   ระบบท่อน้ำ  : ['tank']
- */
-/**
  * Hard minimum floor — ห้าม scale ลงต่ำกว่านี้ไม่ว่างบจะน้อยแค่ไหน
  * ระบุเป็นราคาจริง (absolute) ไม่ใช่ fraction
- * ใช้เพื่อการันตีว่า capacity container ที่สำคัญ (เช่น PSU)
- * ยังมีงบพอซื้อของพื้นฐานอยู่เสมอ
  *
  * ตัวอย่างอื่น:
  *   Server Rack : { ups: 5000 }  — สำรองอย่างน้อย 5,000 สำหรับ UPS เสมอ
@@ -125,14 +114,20 @@ export const HARD_FLOOR_MIN: Partial<Record<EntityType, number>> = {
  *
  * 'sequential' : เติม entity อันดับ 1 ให้เต็มก่อน แล้วค่อยไป 2, 3 (เดิม)
  * 'round_robin': วนแจกทีละ 1 ชิ้นต่อ entity ไปเรื่อยๆ จนเต็ม limit หรืองบหมด
- *               ป้องกัน entity อันดับต้นๆ กวาดงบจนหมด
  *
  * ตัวอย่างอื่น:
- *   สั่งซื้อวัสดุ  : 'round_robin'  (กระจายซื้อหลายรุ่นเท่าๆ กัน)
- *   เติม storage   : 'sequential'   (เอา drive รุ่นที่ดีที่สุดให้เต็มก่อน)
+ *   สั่งซื้อวัสดุ  : 'round_robin'
+ *   เติม storage   : 'sequential'
  */
 export const STACK_DISTRIBUTE_MODE: 'sequential' | 'round_robin' = 'sequential'
 
+/**
+ * slot ที่ต้องผ่าน aggregate rules ก่อนเลือก (capacity containers)
+ *
+ * ตัวอย่างอื่น:
+ *   Server Rack : ['ups']
+ *   ระบบท่อน้ำ  : ['tank']
+ */
 export const AGGREGATE_GUARD_TYPES: EntityType[] = ['psu', 'ram']
 
 /**
@@ -148,6 +143,20 @@ export const AGGREGATE_DISPLAY: { primary: string; safety: string | null } = {
   primary: 'AGG_POWER_CAPACITY',
   safety:  'AGG_POWER_SAFETY',
 }
+
+/**
+ * ประเภทชิ้นส่วนที่ต้องมีในทุก simulation ที่ valid
+ * ถ้า type ใดใน list นี้ไม่มีใน suggestion → isValid = false → BOM ไม่ถูก export
+ *
+ * ป้องกันกรณีที่ AGGREGATE_GUARD_TYPES กรอง capacity container ทุกตัวออก
+ * (เช่น PSU ทุกตัวมี wattage ไม่พอรับ load รวม) แล้ว runAggregate คืน []
+ * ทำให้ไม่มี error แต่ BOM กลับไม่มี PSU
+ *
+ * ตัวอย่างอื่น:
+ *   Server Rack : ['rack', 'ups']
+ *   ระบบท่อน้ำ  : ['pump', 'tank']
+ */
+export const REQUIRED_TYPES: EntityType[] = ['cpu', 'motherboard', 'psu']
 
 /**
  * attribute key ที่ใช้เป็นราคาของ entity

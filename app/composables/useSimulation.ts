@@ -20,6 +20,7 @@ import {
   QUANTITY_MODE_PER_TYPE,
   AGGREGATE_GUARD_TYPES,
   AGGREGATE_DISPLAY,
+  REQUIRED_TYPES,
   COST_ATTRIBUTE,
   COST_PRECISION,
 } from '~/composables/simulationConfig'
@@ -357,10 +358,9 @@ export function useSimulation() {
     return null
   })
 
-  // BUG-B fix: ต้องมีอย่างน้อย 2 ชิ้นส่วน — ให้ตรงกับ threshold ของ issues computed
-  // กรณี 1 ชิ้น: issues คืน [] เพราะ skip validation → isValid เคย = true ผิดพลาด
   const isValid = computed(() =>
     simulationItems.value.length >= 2 &&
+    REQUIRED_TYPES.every((t) => suggestion.value[t].length > 0) &&
     issues.value.filter((i) => i.severity === 'error').length === 0,
   )
 
