@@ -123,9 +123,10 @@ export function runPairwise(
       const passed = evalLogic(rule.condition, { source, target })
 
       if (!passed) {
-        const lo = Math.min(source.id, target.id)
-        const hi = Math.max(source.id, target.id)
-        const pairKey = `${rule.code}:${lo}:${hi}`
+        // BUG-E fix: ใช้ key แบบมีทิศทาง (source:target) แทน lo:hi
+        // ป้องกัน pair (A→B) และ (B→A) ถูกรวมเป็น key เดียว
+        // ในกรณี rule ที่ source/target types overlap กัน
+        const pairKey = `${rule.code}:${source.id}:${target.id}`
         if (seenPairs.has(pairKey)) continue
         seenPairs.add(pairKey)
 

@@ -59,10 +59,15 @@ function resolveCapacity(
 
   switch (cfg.mode) {
     case 'entity_attribute': {
-      const found = items.find((i) => i.entity.entity_type === cfg.entity_type)
-      if (!found) return null
-      const raw = found.entity.attributes[cfg.attribute!]
-      base = raw !== undefined ? Number(raw) : null
+      // BUG-D fix: sum across all matching entities แทนการใช้แค่ตัวแรก
+      // รองรับ domain ที่มี capacity container มากกว่า 1 ตัว (เช่น 2 UPS)
+      const matching = items.filter((i) => i.entity.entity_type === cfg.entity_type)
+      if (matching.length === 0) return null
+      const values = matching
+        .map((i) => i.entity.attributes[cfg.attribute!])
+        .filter((v) => v !== undefined && v !== null)
+        .map(Number)
+      base = values.length > 0 ? values.reduce((a, b) => a + b, 0) : null
       break
     }
     case 'simulation_constraint': {
@@ -102,7 +107,6 @@ function compare(agg: number, op: string, cap: number): boolean {
   }
 }
 
-// คืน detail เสมอไม่ว่า rule จะ pass หรือ fail (ใช้สำหรับแสดง power bar)
 export function getAggregateDetail(
   rule: CompatibilityRule,
   items: SimulationItem[],

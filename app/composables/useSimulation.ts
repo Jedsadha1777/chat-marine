@@ -161,7 +161,6 @@ export function useSimulation() {
     Object.fromEntries(ENTITY_TYPES.map((t) => [t, false])) as Record<EntityType, boolean>,
   )
   const blockedIds = reactive<Set<number>>(new Set())
-  const floorOverflow = ref(false)
 
   function passesAggregate(items: SimulationItem[]): boolean {
     return RULES.filter(
@@ -182,7 +181,9 @@ export function useSimulation() {
     return passesAggregate(toSimItems(testSlots))
   }
 
-  const suggestion = computed((): Record<EntityType, SlotItem[]> => {
+  // BUG-A fix: แยก computed ที่คำนวณทั้ง slots และ overflow ออกมา
+  // เพื่อกำจัด side effect (floorOverflow.value = overflow) ใน computed เดิม
+  const _suggestionData = computed((): { slots: Record<EntityType, SlotItem[]>; overflow: boolean } => {
     const result = emptySlots()
 
     for (const type of ENTITY_TYPES) {
@@ -202,8 +203,6 @@ export function useSimulation() {
         floor: Object.fromEntries(ENTITY_TYPES.map((t) => [t, 0])) as Record<EntityType, number>,
         overflow: false,
       }
-
-    floorOverflow.value = overflow
 
     const totalFloor = freeTypes.reduce((s, t) => s + floor[t], 0)
     let fillBudget = Math.max(0, remaining - totalFloor)
@@ -251,7 +250,9 @@ export function useSimulation() {
               added = true
             }
           }
-          const spent = isFinite(typeBudget) ? typeBudget - typeRemaining : typeRemaining === typeBudget ? 0 : typeBudget - typeRemaining
+          const spent = isFinite(typeBudget)
+            ? typeBudget - typeRemaining
+            : typeRemaining === typeBudget ? 0 : typeBudget - typeRemaining
           if (isFinite(spent)) fillBudget = Math.max(0, fillBudget - Math.max(0, spent - floor[type]))
 
         } else {
@@ -299,8 +300,12 @@ export function useSimulation() {
       }
     }
 
-    return result
+    return { slots: result, overflow }
   })
+
+  const suggestion = computed(() => _suggestionData.value.slots)
+  // BUG-A fix: floorOverflow เป็น computed แทน ref — ไม่มี side effect
+  const floorOverflow = computed(() => _suggestionData.value.overflow)
 
   const simulationItems = computed((): SimulationItem[] => toSimItems(suggestion.value))
   const selectedEntities = computed((): Entity[] => simulationItems.value.map((i) => i.entity))
@@ -348,8 +353,10 @@ export function useSimulation() {
     return null
   })
 
+  // BUG-B fix: ต้องมีอย่างน้อย 2 ชิ้นส่วน — ให้ตรงกับ threshold ของ issues computed
+  // กรณี 1 ชิ้น: issues คืน [] เพราะ skip validation → isValid เคย = true ผิดพลาด
   const isValid = computed(() =>
-    simulationItems.value.length > 0 &&
+    simulationItems.value.length >= 2 &&
     issues.value.filter((i) => i.severity === 'error').length === 0,
   )
 
@@ -373,6 +380,8 @@ export function useSimulation() {
     return ENTITIES.filter((e) => {
       if (e.status !== 'published') return false
       if (e.entity_type !== type) return false
+      // BUG-C fix: กรอง blocked entities ออกจาก picker ด้วย
+      if (blockedIds.has(e.id)) return false
       return cachedPairwise(e, currentEntities)
     })
   }
@@ -397,8 +406,6 @@ export function useSimulation() {
     if (!capacity) return false
 
     const capAttr = dynCfg.capacity_attribute ?? 'modules'
-
-    // BUG-01 fix: อ่านจาก pinned ไม่ใช่ suggestion
     const usedModules = pinned[type].reduce((sum, s) => {
       const mod = Number(s.entity.attributes[capAttr] ?? 1)
       return sum + mod * s.quantity

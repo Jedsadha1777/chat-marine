@@ -23,7 +23,8 @@ export interface RootNode   { kind: 'root';  children: (TextNode | VarNode)[] }
 //  LEXER
 // ═════════════════════════════════════════════════════════════════
 
-const WORD_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.'
+// BUG-F fix: เพิ่ม '-' เพื่อรองรับ attribute path เช่น power-draw-w
+const WORD_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-'
 const VAR_START  = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_'
 
 class Lexer {
@@ -408,28 +409,17 @@ class Evaluator {
     return String(value)
   }
 
-  /**
-   * formatFloat — mirrors PHP formatFloat exactly:
-   * 500.0      → "500"
-   * 0.1 + 0.2  → "0.3"  (not 0.30000000000000004)
-   * 1e-7       → "1e-7"
-   * NaN        → "NaN"
-   * Infinity   → "Infinity"
-   */
   private formatFloat(value: number): string {
     if (isNaN(value))     return 'NaN'
     if (!isFinite(value)) return value > 0 ? 'Infinity' : '-Infinity'
 
-    // integer stored as float
     if (value % 1 === 0 && Math.abs(value) < 1e15) return String(Math.trunc(value))
 
-    // extreme values → scientific notation
     if (Math.abs(value) >= 1e15 || (Math.abs(value) > 0 && Math.abs(value) < 1e-6)) {
       return value.toExponential()
     }
 
-    // normal range → up to 10 significant digits, strip trailing zeros
-    let str = parseFloat(value.toPrecision(10)).toString()
+    const str = parseFloat(value.toPrecision(10)).toString()
     return str
   }
 
@@ -437,10 +427,6 @@ class Evaluator {
     return this.flat[path] ?? null
   }
 
-  /**
-   * Flatten nested object to dot notation
-   * { a: { b: 1 } } → { "a": {b:1}, "a.b": 1 }
-   */
   private flatten(data: Record<string, unknown>, prefix = ''): Record<string, unknown> {
     const result: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(data)) {
