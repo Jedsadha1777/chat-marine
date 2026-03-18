@@ -13,6 +13,8 @@ export const RULES: CompatibilityRule[] = [
     scope: {
       match_by:      'shared_attribute',
       attribute_key: 'socket',
+      source_types:  ['cpu'],
+      target_types:  ['motherboard'],
     },
     condition: {
       '==': [

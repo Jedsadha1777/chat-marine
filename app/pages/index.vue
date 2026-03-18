@@ -105,7 +105,7 @@ function slotTotal(items: SlotItem[]): number {
 const powerAgg = computed(() => aggregateDetail.value?.aggregate_value ?? null)
 const powerCap = computed(() => aggregateDetail.value?.capacity_value  ?? null)
 const powerPct = computed(() => {
-  if (!powerAgg.value || !powerCap.value || powerCap.value === 0) return 0
+  if (powerAgg.value === null || powerCap.value === null || powerCap.value === 0) return 0
   return (powerAgg.value / powerCap.value) * 100
 })
 </script>

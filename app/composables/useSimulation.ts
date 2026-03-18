@@ -236,10 +236,10 @@ export function useSimulation() {
         if (STACK_DISTRIBUTE_MODE === 'round_robin') {
           let typeRemaining = typeBudget
           let added = true
-          while (added && result[type].length < limit && typeRemaining >= 0) {
+          while (added && usedCapacity(type, result[type]) < limit && typeRemaining >= 0) {
             added = false
             for (const e of sorted) {
-              if (result[type].length >= limit) break
+              if (usedCapacity(type, result[type]) >= limit) break
               const c = unitCost(e)
               if (c > 0 && c > typeRemaining) continue
               if (AGGREGATE_GUARD_TYPES.includes(type)) {
@@ -259,31 +259,23 @@ export function useSimulation() {
           const dynCapCfg = DYNAMIC_MAX_PER_TYPE[type]
           const capAttr = dynCapCfg?.capacity_attribute
 
-          const fillEntity = (e: Entity, existing: { entity: Entity; quantity: number } | undefined) => {
-            if (usedCapacity(type, result[type]) >= limit) return
+          for (const e of sorted) {
+            if (result[type].some((s) => s.entity.id === e.id)) continue
+            if (usedCapacity(type, result[type]) >= limit) break
             const c = unitCost(e)
             const capPerKit = capAttr ? Number(e.attributes[capAttr] ?? 1) : 1
             const rem_cap = remainingCapacity(type, result[type], limit)
             const slotsLeft = capPerKit > 0 ? Math.floor(rem_cap / capPerKit) : rem_cap
             const maxQty = c > 0 ? Math.min(slotsLeft, Math.floor(typeRemaining / c)) : slotsLeft > 0 ? 1 : 0
-            if (maxQty < 1) return
+            if (maxQty < 1) continue
             let qty = maxQty
             if (AGGREGATE_GUARD_TYPES.includes(type) && !passesAggregateWithQty(result, type, e, qty)) {
               qty = qty - 1
               while (qty > 0 && !passesAggregateWithQty(result, type, e, qty)) qty--
-              if (qty < 1) return
+              if (qty < 1) continue
             }
-            if (existing) {
-              existing.quantity += qty
-            } else {
-              result[type].push({ entity: e, quantity: qty })
-            }
+            result[type].push({ entity: e, quantity: qty })
             if (c > 0) typeRemaining -= c * qty
-          }
-
-          for (const e of sorted) {
-            if (result[type].some((s) => s.entity.id === e.id)) continue
-            fillEntity(e, undefined)
           }
 
           const spent = isFinite(typeBudget) ? typeBudget - typeRemaining : 0
