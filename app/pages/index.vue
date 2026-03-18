@@ -2,6 +2,7 @@
 import type { Entity } from '~/data/types'
 import type { SlotItem } from '~/composables/useSimulation'
 import { ENTITY_TYPE_LABELS, type EntityType } from '~/data/entities'
+import { REQUIRED_TYPES } from '~/composables/simulationConfig'
 
 
 const {
@@ -208,7 +209,8 @@ const powerPct = computed(() => {
                         <span class="pick-check">{{ pinned[type].length === 0 && !excluded[type] ? '✓' : '' }}</span>
                       </div>
 
-                      <div class="pick-row pick-row-exclude" :class="{ 'pick-active': excluded[type] }"
+                     <div v-if="!REQUIRED_TYPES.includes(type)"
+                       class="pick-row pick-row-exclude" :class="{ 'pick-active': excluded[type] }"
                         @click="selectExclude(type)">
                         <span>ไม่ใช้ชิ้นส่วนนี้</span>
                         <span class="pick-check">{{ excluded[type] ? '✓' : '' }}</span>

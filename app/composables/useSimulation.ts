@@ -5,7 +5,7 @@
 
 import type { Entity, SimulationItem, ValidationIssue, BomItem } from '~/data/types'
 import { RULES } from '~/data/rules'
-import { ENTITIES, ENTITY_TYPES, type EntityType } from '~/data/entities'
+import { ENTITIES, ENTITY_TYPES, ENTITY_TYPE_LABELS, type EntityType } from '~/data/entities'
 import { runPairwise } from '~/engine/pairwise'
 import { runAggregate, getAggregateDetail } from '~/engine/aggregate'
 import {
@@ -332,12 +332,12 @@ export function useSimulation() {
     const result: ValidationIssue[] = []
 
     for (const t of REQUIRED_TYPES) {
-      if (!excluded[t] && suggestion.value[t].length === 0) {
+      if (suggestion.value[t].length === 0) {
         result.push({
           rule_code:  `MISSING_${t.toUpperCase()}`,
           check_type: 'aggregate',
           severity:   'error',
-          message:    `ไม่มี ${t} ที่เหมาะสม — อาจเกิดจากงบไม่พอหรือ compatibility ขัดกัน`,
+          message:    `ไม่มี ${ENTITY_TYPE_LABELS[t]} ที่เหมาะสม — อาจเกิดจากงบไม่พอหรือ compatibility ขัดกัน`,
           resolution: 'ตรวจสอบงบประมาณหรือปลด pin ชิ้นส่วนอื่น',
         })
       }
