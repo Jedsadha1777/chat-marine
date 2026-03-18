@@ -50,7 +50,6 @@ function selectPin(type: EntityType, entity: Entity) {
     } else if (canAddToSlot(type, entity)) {
       pinItems(type, [...pinned[type], { entity, quantity: 1 }])
     } else {
-      // BUG-01 fix: slot เต็ม → replace ทั้งหมดด้วย entity ที่เพิ่งเลือก
       pinItems(type, [{ entity, quantity: 1 }])
     }
   }
