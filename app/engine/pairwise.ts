@@ -25,7 +25,6 @@ function evalLogic(logic: unknown, data: Record<string, unknown>): boolean {
     case '==': {
       const a = resolve(args[0])
       const b = resolve(args[1])
-      // BUG-5 fix: Array-Array → intersection check (มีค่าร่วมกันอย่างน้อย 1 ตัว)
       if (Array.isArray(a) && Array.isArray(b)) return a.some((x) => (b as unknown[]).includes(x))
       if (Array.isArray(a)) return a.includes(b)
       if (Array.isArray(b)) return b.includes(a)
@@ -34,7 +33,6 @@ function evalLogic(logic: unknown, data: Record<string, unknown>): boolean {
     case '!=': {
       const a = resolve(args[0])
       const b = resolve(args[1])
-      // BUG-5 fix: Array-Array → ไม่มีค่าร่วมกันเลย
       if (Array.isArray(a) && Array.isArray(b)) return !a.some((x) => (b as unknown[]).includes(x))
       if (Array.isArray(a)) return !a.includes(b)
       if (Array.isArray(b)) return !b.includes(a)
