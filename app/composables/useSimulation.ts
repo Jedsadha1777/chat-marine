@@ -100,7 +100,7 @@ interface FloorResult {
 
 function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult {
   const raw = Object.fromEntries(
-    ENTITY_TYPES.map((t) => [t, totalBudget * (BUDGET_FLOOR_PER_TYPE[t] ?? 0)]),
+    freeTypes.map((t) => [t, totalBudget * (BUDGET_FLOOR_PER_TYPE[t] ?? 0)]),
   ) as Record<EntityType, number>
 
   const totalHardMin = freeTypes.reduce((s, t) => s + (HARD_FLOOR_MIN[t] ?? 0), 0)
@@ -112,7 +112,7 @@ function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult
   if (total > totalBudget && total > 0) {
     const scale = totalBudget / total
     floor = Object.fromEntries(
-      ENTITY_TYPES.map((t) => {
+      freeTypes.map((t) => {
         const hardMin = HARD_FLOOR_MIN[t] ?? 0
         const scaled = raw[t] * scale
         return [t, Math.min(totalBudget, Math.max(hardMin, scaled))]
@@ -120,7 +120,7 @@ function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult
     ) as Record<EntityType, number>
   } else {
     floor = Object.fromEntries(
-      ENTITY_TYPES.map((t) => [t, Math.max(raw[t], HARD_FLOOR_MIN[t] ?? 0)]),
+      freeTypes.map((t) => [t, Math.max(raw[t], HARD_FLOOR_MIN[t] ?? 0)]),
     ) as Record<EntityType, number>
   }
 
@@ -389,9 +389,7 @@ export function useSimulation() {
       return pinned[type].length < staticLimit
     }
 
-    const srcSlot =
-      suggestion.value[dynCfg.source_type][0] ??
-      (pinned[dynCfg.source_type][0] ?? null)
+    const srcSlot = suggestion.value[dynCfg.source_type][0] ?? null
 
     if (!srcSlot) return false
 

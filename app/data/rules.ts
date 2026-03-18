@@ -54,7 +54,7 @@ export const RULES: CompatibilityRule[] = [
   {
     id:         3,
     code:       'RAM_SLOT_FIT',
-    name:       'RAM Modules Must Fit Motherboard Slots',
+    name:       'Single RAM Kit Must Not Exceed All Motherboard Slots',
     check_type: 'pairwise',
     severity:   'error',
     priority:   180,
@@ -63,6 +63,8 @@ export const RULES: CompatibilityRule[] = [
       match_by:         'attribute_pair',
       source_attribute: 'modules',
       target_attribute: 'ram_slots',
+      source_types:     ['ram'],
+      target_types:     ['motherboard'],
     },
     condition: {
       '<=': [
@@ -86,6 +88,8 @@ export const RULES: CompatibilityRule[] = [
       match_by:         'attribute_pair',
       source_attribute: 'tdp_w',
       target_attribute: 'tdp_support_w',
+      source_types:     ['cpu'],
+      target_types:     ['motherboard'],
     },
     condition: {
       '<=': [
