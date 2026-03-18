@@ -119,11 +119,6 @@ export interface ValidationIssue {
   }
 }
 
-export interface ValidationResult {
-  is_valid: boolean
-  issues: ValidationIssue[]
-}
-
 // ─────────────────────────────────────────────
 // BOM
 // ─────────────────────────────────────────────
