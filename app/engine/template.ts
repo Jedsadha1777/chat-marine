@@ -23,7 +23,6 @@ export interface RootNode   { kind: 'root';  children: (TextNode | VarNode)[] }
 //  LEXER
 // ═════════════════════════════════════════════════════════════════
 
-// BUG-F fix: เพิ่ม '-' เพื่อรองรับ attribute path เช่น power-draw-w
 const WORD_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-'
 const VAR_START  = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_'
 
