@@ -330,6 +330,19 @@ export function useSimulation() {
   const issues = computed((): ValidationIssue[] => {
     if (simulationItems.value.length < 2) return []
     const result: ValidationIssue[] = []
+
+    for (const t of REQUIRED_TYPES) {
+      if (!excluded[t] && suggestion.value[t].length === 0) {
+        result.push({
+          rule_code:  `MISSING_${t.toUpperCase()}`,
+          check_type: 'aggregate',
+          severity:   'error',
+          message:    `ไม่มี ${t} ที่เหมาะสม — อาจเกิดจากงบไม่พอหรือ compatibility ขัดกัน`,
+          resolution: 'ตรวจสอบงบประมาณหรือปลด pin ชิ้นส่วนอื่น',
+        })
+      }
+    }
+
     const activeRules = RULES.filter((r) => r.is_active).sort((a, b) => b.priority - a.priority)
     const uniq = uniqueEntities(selectedEntities.value)
     for (const rule of activeRules) {
@@ -360,7 +373,6 @@ export function useSimulation() {
 
   const isValid = computed(() =>
     simulationItems.value.length >= 2 &&
-    REQUIRED_TYPES.every((t) => suggestion.value[t].length > 0) &&
     issues.value.filter((i) => i.severity === 'error').length === 0,
   )
 
