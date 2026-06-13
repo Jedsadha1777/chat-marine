@@ -85,6 +85,21 @@ export const QUANTITY_MODE_PER_TYPE: Partial<Record<EntityType, 'unique' | 'stac
 export const SELECTION_STRATEGY: 'highest_cost' | 'lowest_cost' | 'best_fit' = 'highest_cost'
 
 /**
+ * Rule ความโลภแยกต่างหาก — override SELECTION_STRATEGY เฉพาะบาง type
+ *
+ * ram: 'lowest_cost' — เลือก RAM ถูกสุดที่ compatible
+ *   ให้งบเหลือสำหรับ GPU/CPU/MB ที่ greedy (highest_cost)
+ * psu: 'lowest_cost' — เลือก PSU ถูกสุดที่ผ่าน power check
+ *   ไม่ให้ PSU กินงบมากกว่าที่จำเป็น
+ *
+ * GPU/CPU/MB ไม่ระบุ → ใช้ SELECTION_STRATEGY global (highest_cost)
+ */
+export const SELECTION_STRATEGY_PER_TYPE: Partial<Record<EntityType, 'highest_cost' | 'lowest_cost' | 'best_fit'>> = {
+  ram: 'lowest_cost',
+  psu: 'lowest_cost',
+}
+
+/**
  * สำรองงบขั้นต่ำให้แต่ละ type ก่อนที่ greedy fill จะเริ่ม
  * ป้องกัน type ต้นๆ ใน FILL_ORDER กวาดงบจนหมด ทำให้ type ท้ายๆ ไม่มีของ
  *
@@ -106,7 +121,7 @@ export const BUDGET_FLOOR_PER_TYPE: Partial<Record<EntityType, number>> = {
  *   Server Rack : { ups: 5000 }  — สำรองอย่างน้อย 5,000 สำหรับ UPS เสมอ
  */
 export const HARD_FLOOR_MIN: Partial<Record<EntityType, number>> = {
-  // psu: 2000  ← uncomment เพื่อสำรองขั้นต่ำ 2,000 สำหรับ PSU เสมอ
+  psu: 3990,
 }
 
 /**
@@ -157,6 +172,16 @@ export const AGGREGATE_DISPLAY: { primary: string; safety: string | null } = {
  *   ระบบท่อน้ำ  : ['pump', 'tank']
  */
 export const REQUIRED_TYPES: EntityType[] = ['cpu', 'motherboard', 'ram', 'psu']
+
+/**
+ * Rule ความโลภแยกต่างหาก — ลำดับ type ที่ upgradePass พยายาม upgrade
+ *
+ * หลัง greedy fill + repair: ถ้า RAM qty > 1 และ trade 1 kit → ได้ GPU/CPU/MB ดีกว่า
+ * → trade! ไม่ต้องเก็บ RAM คิตที่ 2 ไว้โดยไม่จำเป็น
+ *
+ * ลำดับ: GPU ก่อน (priority สูงสุด) → CPU → MB
+ */
+export const UPGRADE_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard']
 
 /**
  * attribute key ที่ใช้เป็นราคาของ entity

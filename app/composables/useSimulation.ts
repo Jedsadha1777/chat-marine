@@ -1,13 +1,10 @@
-// ══════════════════════════════════════════════════════════════════
-//  ENGINE — ห้ามแก้
-//  config อยู่ที่ simulationConfig.ts
-// ══════════════════════════════════════════════════════════════════
-
 import type { Entity, SimulationItem, ValidationIssue, BomItem } from '~/data/types'
 import { RULES } from '~/data/rules'
 import { ENTITIES, ENTITY_TYPES, ENTITY_TYPE_LABELS, type EntityType } from '~/data/entities'
 import { runPairwise } from '~/engine/pairwise'
 import { runAggregate, getAggregateDetail } from '~/engine/aggregate'
+import { buildSuggestion } from '~/engine/suggest'
+import { DEFAULT_DOMAIN_CONFIG } from '~/composables/domainConfig'
 import {
   FILL_ORDER,
   MAX_PER_TYPE,
@@ -46,22 +43,8 @@ function toSimItems(slots: Record<EntityType, SlotItem[]>): SimulationItem[] {
   )
 }
 
-function sortCandidates(candidates: Entity[], remaining: number): Entity[] {
-  const copy = [...candidates]
-  switch (SELECTION_STRATEGY) {
-    case 'lowest_cost':
-      return copy.sort((a, b) => unitCost(a) - unitCost(b))
-    case 'best_fit':
-      return copy.sort(
-        (a, b) => Math.abs(unitCost(a) - remaining) - Math.abs(unitCost(b) - remaining),
-      )
-    default:
-      return copy.sort((a, b) => unitCost(b) - unitCost(a))
-  }
-}
-
 function emptySlots(): Record<EntityType, SlotItem[]> {
-  return Object.fromEntries(ENTITY_TYPES.map((t) => [t, []])) as Record<EntityType, SlotItem[]>
+  return Object.fromEntries(ENTITY_TYPES.map((t) => [t, [] as SlotItem[]])) as Record<EntityType, SlotItem[]>
 }
 
 function maxFor(type: EntityType, slots?: Record<EntityType, SlotItem[]>): number {
@@ -70,7 +53,7 @@ function maxFor(type: EntityType, slots?: Record<EntityType, SlotItem[]>): numbe
   if (dynCfg && slots) {
     const sourceItems = slots[dynCfg.source_type]
     if (sourceItems.length > 0) {
-      const val = sourceItems[0].entity.attributes[dynCfg.source_attribute]
+      const val = sourceItems[0]?.entity.attributes[dynCfg.source_attribute]
       if (val !== undefined && val !== null) return Number(val)
     }
     return dynCfg.fallback
@@ -85,47 +68,9 @@ function uniqueEntities(entities: Entity[]): Entity[] {
 
 function usedCapacity(type: EntityType, items: { entity: Entity; quantity: number }[]): number {
   const dynCfg = DYNAMIC_MAX_PER_TYPE[type]
-  if (!dynCfg?.capacity_attribute) return items.length
+  if (!dynCfg?.capacity_attribute) return items.reduce((sum, s) => sum + s.quantity, 0)
   const attr = dynCfg.capacity_attribute
   return items.reduce((sum, s) => sum + Number(s.entity.attributes[attr] ?? 1) * s.quantity, 0)
-}
-
-function remainingCapacity(type: EntityType, items: { entity: Entity; quantity: number }[], limit: number): number {
-  return limit - usedCapacity(type, items)
-}
-
-interface FloorResult {
-  floor: Record<EntityType, number>
-  overflow: boolean
-}
-
-function computeFloor(totalBudget: number, freeTypes: EntityType[]): FloorResult {
-  const raw = Object.fromEntries(
-    freeTypes.map((t) => [t, totalBudget * (BUDGET_FLOOR_PER_TYPE[t] ?? 0)]),
-  ) as Record<EntityType, number>
-
-  const totalHardMin = freeTypes.reduce((s, t) => s + (HARD_FLOOR_MIN[t] ?? 0), 0)
-  const overflow = totalHardMin > totalBudget
-
-  const total = freeTypes.reduce((s, t) => s + raw[t], 0)
-  let floor: Record<EntityType, number>
-
-  if (total > totalBudget && total > 0) {
-    const scale = totalBudget / total
-    floor = Object.fromEntries(
-      freeTypes.map((t) => {
-        const hardMin = HARD_FLOOR_MIN[t] ?? 0
-        const scaled = raw[t] * scale
-        return [t, Math.min(totalBudget, Math.max(hardMin, scaled))]
-      }),
-    ) as Record<EntityType, number>
-  } else {
-    floor = Object.fromEntries(
-      freeTypes.map((t) => [t, Math.max(raw[t], HARD_FLOOR_MIN[t] ?? 0)]),
-    ) as Record<EntityType, number>
-  }
-
-  return { floor, overflow }
 }
 
 const _pwCache = new Map<string, boolean>()
@@ -156,8 +101,6 @@ function cachedPairwise(candidate: Entity, others: Entity[]): boolean {
   return true
 }
 
-// ══════════════════════════════════════════════════════════════════
-
 export function useSimulation() {
 
   const budget = ref<number | null>(null)
@@ -167,149 +110,20 @@ export function useSimulation() {
   )
   const blockedIds = reactive<Set<number>>(new Set())
 
-  function passesAggregate(items: SimulationItem[]): boolean {
-    return RULES.filter(
-      (r) => r.is_active && r.check_type === 'aggregate' && r.severity === 'error',
-    ).every((rule) => runAggregate(rule, items, {}).length === 0)
-  }
-
-  function passesAggregateWithQty(
-    result: Record<EntityType, SlotItem[]>,
-    type: EntityType,
-    entity: Entity,
-    qty: number,
-  ): boolean {
-    const testSlots = {
-      ...result,
-      [type]: [...result[type], { entity, quantity: qty }],
-    }
-    return passesAggregate(toSimItems(testSlots))
-  }
-
-  // BUG-A fix: แยก computed ที่คำนวณทั้ง slots และ overflow ออกมา
-  // เพื่อกำจัด side effect (floorOverflow.value = overflow) ใน computed เดิม
   const _suggestionData = computed((): { slots: Record<EntityType, SlotItem[]>; overflow: boolean } => {
-    const result = emptySlots()
-
-    for (const type of ENTITY_TYPES) {
-      result[type] = excluded[type] ? [] : pinned[type].map((s) => ({ ...s }))
+    const result = buildSuggestion(ENTITIES, RULES, DEFAULT_DOMAIN_CONFIG, {
+      budget:     budget.value,
+      pinned:     Object.fromEntries(ENTITY_TYPES.map((t) => [t, pinned[t]])),
+      excluded:   Object.fromEntries(ENTITY_TYPES.map((t) => [t, excluded[t]])),
+      blockedIds: blockedIds,
+    })
+    return {
+      slots:    result.slots as Record<EntityType, SlotItem[]>,
+      overflow: result.overflow,
     }
-
-    const pinnedCost = ENTITY_TYPES
-      .filter((t) => !excluded[t])
-      .reduce((sum, t) => sum + result[t].reduce((s, i) => s + slotCost(i), 0), 0)
-
-    let remaining = budget.value !== null ? budget.value - pinnedCost : Infinity
-    const freeTypes = FILL_ORDER.filter((t) => !excluded[t] && result[t].length === 0)
-
-    const { floor, overflow } = budget.value !== null
-      ? computeFloor(remaining, freeTypes)
-      : {
-        floor: Object.fromEntries(ENTITY_TYPES.map((t) => [t, 0])) as Record<EntityType, number>,
-        overflow: false,
-      }
-
-    const totalFloor = freeTypes.reduce((s, t) => s + floor[t], 0)
-    let fillBudget = Math.max(0, remaining - totalFloor)
-
-    for (const type of FILL_ORDER) {
-      if (excluded[type]) continue
-      if (pinned[type].length > 0) continue
-      const limit = maxFor(type, result)
-      if (usedCapacity(type, result[type]) >= limit) continue
-
-      const filled = ENTITY_TYPES.flatMap((t) => result[t].map((s) => s.entity))
-      const typeBudget = fillBudget + floor[type]
-
-      const filtered = ENTITIES.filter((e) => {
-        if (e.status !== 'published') return false
-        if (e.entity_type !== type) return false
-        if (unitCost(e) > typeBudget) return false
-        if (blockedIds.has(e.id) && !pinned[type].some((s) => s.entity.id === e.id)) return false
-        if (!cachedPairwise(e, filled)) return false
-        if (AGGREGATE_GUARD_TYPES.includes(type)) {
-          if (!passesAggregateWithQty(result, type, e, 1)) return false
-        }
-        return true
-      })
-
-      const sorted = sortCandidates(filtered, typeBudget)
-      const effectiveMode = QUANTITY_MODE_PER_TYPE[type] ?? QUANTITY_MODE
-
-      if (effectiveMode === 'stack') {
-        if (STACK_DISTRIBUTE_MODE === 'round_robin') {
-          let typeRemaining = typeBudget
-          let added = true
-          while (added && usedCapacity(type, result[type]) < limit && typeRemaining >= 0) {
-            added = false
-            for (const e of sorted) {
-              if (usedCapacity(type, result[type]) >= limit) break
-              const c = unitCost(e)
-              if (c > 0 && c > typeRemaining) continue
-              if (AGGREGATE_GUARD_TYPES.includes(type)) {
-                if (!passesAggregateWithQty(result, type, e, 1)) continue
-              }
-              const existing = result[type].find((s) => s.entity.id === e.id)
-              if (existing) { existing.quantity++ } else { result[type].push({ entity: e, quantity: 1 }) }
-              if (c > 0) typeRemaining -= c
-              added = true
-            }
-          }
-          const spent = isFinite(typeBudget)
-            ? typeBudget - typeRemaining
-            : typeRemaining === typeBudget ? 0 : typeBudget - typeRemaining
-          if (isFinite(spent)) fillBudget = Math.max(0, fillBudget - Math.max(0, spent - floor[type]))
-
-        } else {
-          let typeRemaining = typeBudget
-          const dynCapCfg = DYNAMIC_MAX_PER_TYPE[type]
-          const capAttr = dynCapCfg?.capacity_attribute
-
-          for (const e of sorted) {
-            if (result[type].some((s) => s.entity.id === e.id)) continue
-            if (usedCapacity(type, result[type]) >= limit) break
-            const c = unitCost(e)
-            const capPerKit = capAttr ? Number(e.attributes[capAttr] ?? 1) : 1
-            const rem_cap = remainingCapacity(type, result[type], limit)
-            const slotsLeft = capPerKit > 0 ? Math.floor(rem_cap / capPerKit) : rem_cap
-            const maxQty = c > 0 ? Math.min(slotsLeft, Math.floor(typeRemaining / c)) : slotsLeft > 0 ? 1 : 0
-            if (maxQty < 1) continue
-            let qty = maxQty
-            if (AGGREGATE_GUARD_TYPES.includes(type) && !passesAggregateWithQty(result, type, e, qty)) {
-              qty = qty - 1
-              while (qty > 0 && !passesAggregateWithQty(result, type, e, qty)) qty--
-              if (qty < 1) continue
-            }
-            result[type].push({ entity: e, quantity: qty })
-            if (c > 0) typeRemaining -= c * qty
-          }
-
-          const spent = isFinite(typeBudget) ? typeBudget - typeRemaining : 0
-          if (isFinite(spent)) fillBudget = Math.max(0, fillBudget - Math.max(0, spent - floor[type]))
-        }
-
-      } else {
-        let typeRemaining = typeBudget
-        for (const e of sorted) {
-          if (result[type].length >= limit) break
-          if (result[type].some((s) => s.entity.id === e.id)) continue
-          if (unitCost(e) > typeRemaining) continue
-          if (AGGREGATE_GUARD_TYPES.includes(type)) {
-            if (!passesAggregateWithQty(result, type, e, 1)) continue
-          }
-          result[type].push({ entity: e, quantity: 1 })
-          typeRemaining -= unitCost(e)
-        }
-        const spent = isFinite(typeBudget) ? typeBudget - typeRemaining : 0
-        if (isFinite(spent)) fillBudget = Math.max(0, fillBudget - Math.max(0, spent - floor[type]))
-      }
-    }
-
-    return { slots: result, overflow }
   })
 
   const suggestion = computed(() => _suggestionData.value.slots)
-  // BUG-A fix: floorOverflow เป็น computed แทน ref — ไม่มี side effect
   const floorOverflow = computed(() => _suggestionData.value.overflow)
 
   const simulationItems = computed((): SimulationItem[] => toSimItems(suggestion.value))
@@ -396,7 +210,6 @@ export function useSimulation() {
     return ENTITIES.filter((e) => {
       if (e.status !== 'published') return false
       if (e.entity_type !== type) return false
-      // BUG-C fix: กรอง blocked entities ออกจาก picker ด้วย
       if (blockedIds.has(e.id)) return false
       return cachedPairwise(e, currentEntities)
     })
