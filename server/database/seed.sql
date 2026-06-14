@@ -22,4 +22,5 @@ INSERT OR IGNORE INTO entities (id, uuid, entity_type, code, name, status, unit_
 (13, 'psu-001', 'psu',        'PSU-RM750E',     'Corsair RM750e 750W 80+ Gold',  'published', 3990,  '{"watt_output":750,"efficiency":"80+ Gold","unit_cost":3990}'),
 (14, 'psu-002', 'psu',        'PSU-HX1000',     'Corsair HX1000 1000W 80+ Platinum', 'published', 6990, '{"watt_output":1000,"efficiency":"80+ Platinum","unit_cost":6990}'),
 (15, 'psu-003', 'psu',        'PSU-SF450',      'Corsair SF450 450W 80+ Gold',   'published', 2990,  '{"watt_output":450,"efficiency":"80+ Gold","unit_cost":2990}'),
-(16, 'psu-004', 'psu',        'PSU-RM850E',     'Corsair RM850e 850W 80+ Gold',  'published', 4990,  '{"watt_output":850,"efficiency":"80+ Gold","unit_cost":4990}');
+(16, 'psu-004', 'psu',        'PSU-RM850E',     'Corsair RM850e 850W 80+ Gold',  'published', 4990,  '{"watt_output":850,"efficiency":"80+ Gold","unit_cost":4990}'),
+(17, 'psu-005', 'psu',        'PSU-AX1200',     'Corsair AX1200 1200W 80+ Titanium', 'published', 12990, '{"watt_output":1200,"efficiency":"80+ Titanium","unit_cost":12990}');

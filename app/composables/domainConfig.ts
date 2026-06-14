@@ -1,5 +1,5 @@
 import type { DomainConfig } from '~/engine/suggest'
-import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entities'
+import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entityTypes'
 import {
   FILL_ORDER, MAX_PER_TYPE, DYNAMIC_MAX_PER_TYPE,
   AGGREGATE_GUARD_TYPES, AGGREGATE_DISPLAY, REQUIRED_TYPES,

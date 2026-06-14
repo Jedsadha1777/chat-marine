@@ -261,6 +261,19 @@ export const ENTITIES: Entity[] = [
       unit_cost:   4990,
     },
   },
+  {
+    id: 17,
+    uuid: 'psu-005',
+    entity_type: 'psu',
+    code: 'PSU-AX1200',
+    name: 'Corsair AX1200 1200W 80+ Titanium',
+    status: 'published',
+    attributes: {
+      watt_output: 1200,
+      efficiency:  '80+ Titanium',
+      unit_cost:   12990,
+    },
+  },
 ]
 
 export { ENTITY_TYPES, type EntityType, ENTITY_TYPE_LABELS } from './entityTypes'
