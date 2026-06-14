@@ -13,6 +13,10 @@ export interface EntityRow {
 }
 
 export function rowToEntity(row: Record<string, unknown>): Entity {
+  const attributes = JSON.parse(row.attributes as string)
+  // unit_cost column is the canonical value — sync into attributes so the engine
+  // always reads the correct price even if the JSON field is missing or stale.
+  attributes['unit_cost'] = row.unit_cost
   return {
     id:          row.id as number,
     uuid:        row.uuid as string,
@@ -20,13 +24,12 @@ export function rowToEntity(row: Record<string, unknown>): Entity {
     code:        row.code as string,
     name:        row.name as string,
     status:      row.status as Entity['status'],
-    attributes:  JSON.parse(row.attributes as string),
+    attributes,
   }
 }
 
-// Fetch top-N candidates for a type within budget.
-// SQL index on (entity_type, status, unit_cost DESC) makes this O(log n) lookup.
-// limit=15 keeps CPU budget well under 10ms even with pairwise checks in-memory.
+// Fetch top-N candidates for the engine — most expensive first so backtracking
+// can descend toward cheaper options. LIMIT keeps the in-memory set small.
 export async function fetchCandidates(
   DB: D1Database,
   type: string,
@@ -48,6 +51,33 @@ export async function fetchCandidates(
 
   sql += ` ORDER BY unit_cost DESC LIMIT ?`
   params.push(limit)
+
+  const { results } = await DB.prepare(sql).bind(...params).all<Record<string, unknown>>()
+  return results.map(rowToEntity)
+}
+
+// Fetch ALL candidates within budget for the picker UI — no LIMIT so pairwise
+// filtering never silently drops compatible options that sit beyond position N.
+// Ordered cheapest-first so the picker shows affordable options at the top.
+export async function fetchPickerCandidates(
+  DB: D1Database,
+  type: string,
+  maxCost: number,
+  blockedIds: number[],
+): Promise<Entity[]> {
+  let sql = `
+    SELECT id, uuid, entity_type, code, name, status, unit_cost, attributes
+    FROM entities
+    WHERE entity_type = ? AND status = 'published' AND unit_cost <= ?
+  `
+  const params: unknown[] = [type, maxCost]
+
+  if (blockedIds.length > 0) {
+    sql += ` AND id NOT IN (${blockedIds.map(() => '?').join(',')})`
+    params.push(...blockedIds)
+  }
+
+  sql += ` ORDER BY unit_cost ASC`
 
   const { results } = await DB.prepare(sql).bind(...params).all<Record<string, unknown>>()
   return results.map(rowToEntity)

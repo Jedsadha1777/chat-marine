@@ -1,8 +1,7 @@
 import { buildSuggestion, validateItems, aggregateDetailFor, buildBom, totalCostOf, toSimItems } from '~/engine/suggest'
 import { RULES } from '~/data/rules'
 import { DEFAULT_DOMAIN_CONFIG } from '~/composables/domainConfig'
-import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entityTypes'
-import { REQUIRED_TYPES } from '~/composables/simulationConfig'
+import { ENTITY_TYPES } from '~/data/entityTypes'
 import { fetchCandidates, fetchByIds } from '../utils/db'
 import type { SlotItem } from '~/engine/suggest'
 import type { Entity } from '~/data/types'
@@ -66,18 +65,6 @@ export default defineEventHandler(async (event) => {
   const isValid    = simItems.length >= 2 && issues.filter((i) => i.severity === 'error').length === 0
   const bom        = isValid ? buildBom(result.slots, DEFAULT_DOMAIN_CONFIG) : []
   const cost       = totalCostOf(result.slots, DEFAULT_DOMAIN_CONFIG)
-
-  for (const t of REQUIRED_TYPES) {
-    if ((result.slots[t] ?? []).length === 0) {
-      issues.unshift({
-        rule_code:  `MISSING_${t.toUpperCase()}`,
-        check_type: 'aggregate',
-        severity:   'error',
-        message:    `ไม่มี ${ENTITY_TYPE_LABELS[t] ?? t} ที่เหมาะสม — อาจเกิดจากงบไม่พอหรือ compatibility ขัดกัน`,
-        resolution: 'ตรวจสอบงบประมาณหรือปลด pin ชิ้นส่วนอื่น',
-      })
-    }
-  }
 
   return {
     slots:      result.slots,

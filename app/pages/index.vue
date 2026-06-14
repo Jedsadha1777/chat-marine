@@ -43,7 +43,9 @@ async function toggleExpand(type: EntityType) {
   if (expandedSlot.value === type) { closePicker(); return }
   expandedSlot.value = type
   pickerLoading.value = true
-  pickerEntities.value = await compatibleEntitiesFor(type)
+  const results = await compatibleEntitiesFor(type)
+  if (expandedSlot.value !== type) return  // picker changed while fetch was in flight
+  pickerEntities.value = results
   pickerLoading.value = false
 }
 

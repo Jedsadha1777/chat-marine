@@ -1,6 +1,6 @@
 import { runPairwise } from '~/engine/pairwise'
 import { RULES } from '~/data/rules'
-import { fetchCandidates, fetchByIds } from '../utils/db'
+import { fetchPickerCandidates, fetchByIds } from '../utils/db'
 import type { Entity } from '~/data/types'
 
 interface CompatibleRequest {
@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   const maxCost = budget ?? 999_999_999
 
   const contextEntities: Entity[] = currentEntityIds.length > 0 ? await fetchByIds(DB, currentEntityIds) : []
-  const pool: Entity[] = await fetchCandidates(DB, type, maxCost, blockedIds, 30)
+  const pool: Entity[] = await fetchPickerCandidates(DB, type, maxCost, blockedIds)
 
   const errorRules = RULES.filter((r) => r.is_active && r.check_type === 'pairwise' && r.severity === 'error')
   const compatible = pool.filter((candidate) =>
