@@ -1,6 +1,5 @@
 import { runPairwise } from '~/engine/pairwise'
 import { RULES } from '~/data/rules'
-import { ENTITY_TYPES } from '~/data/entities'
 import { fetchCandidates, fetchByIds } from '../utils/db'
 import type { Entity } from '~/data/types'
 
