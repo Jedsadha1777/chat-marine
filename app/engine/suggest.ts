@@ -28,12 +28,18 @@ export interface DomainConfig {
   costAttribute: string
   costPrecision: number
   tierRules?: TierRule[]
-  psuSafetyFactor?: number
-  // Priority order for non-GPU component selection (desc cost). PSU always last (cheapest adequate).
-  // Defaults to fillOrder minus 'gpu'. Configure per domain to control budget allocation priority.
+  // The type iterated first (highest-cost anchor). Defaults to fillOrder[0].
+  anchorType?: string
+  // Priority order for remaining types after anchor. Defaults to fillOrder minus anchorType.
   selectionOrder?: string[]
-  // The type that uses cheapest-adequate selection instead of best-first. Defaults to 'psu'.
+  // The type selected cheapest-adequate (capacity container). Defaults to last in fillOrder.
   capacityType?: string
+  // Attribute on the capacity entity checked against total load. Defaults to 'watt_output'.
+  capacityAttribute?: string
+  // Attributes summed to compute load per entity (first non-null wins per entity). Defaults to ['power_draw_w', 'tdp_w'].
+  loadAttributes?: string[]
+  // Total load must not exceed this fraction of capacity attribute value. Defaults to 0.8.
+  capacityFactor?: number
 }
 
 export interface SlotItem {
@@ -126,33 +132,38 @@ export function cachedPairwise(candidate: Entity, others: Entity[], rules: Compa
   return true
 }
 
-// ── Spec-chain engine helpers ────────────────────────────────────────────────
+// ── Engine helpers ────────────────────────────────────────────────────────────
 
-function findCheapestPsu(
+function findCheapestCapacity(
   available: Entity[],
-  minWatts: number,
+  minCapacity: number,
   maxCost: number,
   cfg: DomainConfig,
 ): Entity | null {
+  const capType: string = cfg.capacityType ?? cfg.fillOrder[cfg.fillOrder.length - 1]!
+  const capAttr = cfg.capacityAttribute ?? 'watt_output'
   return available
     .filter((e) =>
-      e.entity_type === 'psu' &&
-      Number(e.attributes['watt_output'] ?? 0) >= minWatts &&
+      e.entity_type === capType &&
+      Number(e.attributes[capAttr] ?? 0) >= minCapacity &&
       unitCost(e, cfg) <= maxCost
     )
     .sort((a, b) => unitCost(a, cfg) - unitCost(b, cfg))[0] ?? null
 }
 
-function totalPowerOf(entities: Entity[]): number {
-  return entities.reduce(
-    (sum, e) => sum + Number(e.attributes['power_draw_w'] ?? e.attributes['tdp_w'] ?? 0),
-    0,
-  )
+function entityLoad(e: Entity, cfg: DomainConfig): number {
+  const attrs = cfg.loadAttributes ?? ['power_draw_w', 'tdp_w']
+  const val = attrs.map((a) => e.attributes[a]).find((v) => v !== null && v !== undefined) ?? 0
+  return Number(val)
+}
+
+function totalLoadOf(entities: Entity[], cfg: DomainConfig): number {
+  return entities.reduce((sum, e) => sum + entityLoad(e, cfg), 0)
 }
 
 // Generic recursive backtracking fill.
 // Iterates selectionOrder types in priority sequence, trying highest-cost candidates first.
-// capacityType (default 'psu') uses cheapest-adequate selection instead of best-first.
+// capacityType uses cheapest-adequate selection instead of best-first.
 // Returns chosen entity map or null if no valid combination fits within budget.
 function backtrackFill(
   selectionOrder: string[],
@@ -160,36 +171,34 @@ function backtrackFill(
   chosen: Record<string, Entity>,
   remainingBudget: number,
   context: Entity[],
-  gpuCtx: Entity[],
+  anchorCtx: Entity[],
   tierCondsPerType: Record<string, Array<Record<string, unknown>>>,
   available: Entity[],
   rules: CompatibilityRule[],
   cfg: DomainConfig,
   toFill: Set<string>,
-  psuFactor: number,
+  capacityFactor: number,
   capacityType: string,
 ): Record<string, Entity> | null {
   if (index === selectionOrder.length) return chosen
 
   const type: string = selectionOrder[index]!
   const recurse = (next: Record<string, Entity>, budget: number) =>
-    backtrackFill(selectionOrder, index + 1, next, budget, context, gpuCtx, tierCondsPerType, available, rules, cfg, toFill, psuFactor, capacityType)
+    backtrackFill(selectionOrder, index + 1, next, budget, context, anchorCtx, tierCondsPerType, available, rules, cfg, toFill, capacityFactor, capacityType)
 
   if (!toFill.has(type)) return recurse(chosen, remainingBudget)
 
-  // Capacity type (e.g. PSU): cheapest that meets the aggregate requirement
+  // Capacity type: cheapest that meets the aggregate load requirement
   if (type === capacityType) {
-    const powerItems = [...context, ...gpuCtx, ...Object.values(chosen)]
+    const loadItems = [...context, ...anchorCtx, ...Object.values(chosen)]
       .filter((e, i, arr) => arr.indexOf(e) === i && e.entity_type !== capacityType)
-    const psu = findCheapestPsu(available, totalPowerOf(powerItems) / psuFactor, remainingBudget, cfg)
-    if (!psu) return null
-    return { ...chosen, [type]: psu }
+    const cap = findCheapestCapacity(available, totalLoadOf(loadItems, cfg) / capacityFactor, remainingBudget, cfg)
+    if (!cap) return null
+    return { ...chosen, [type]: cap }
   }
 
-  // Regular component: check pairwise compatibility, then sort by tier preference + cost.
-  // Tier conditions are SOFT PREFERENCES: tier-satisfying candidates are tried first (desc cost),
-  // followed by non-tier candidates (desc cost) as fallback. GPU is never blocked by tier alone.
-  const allCtx = [...context, ...gpuCtx, ...Object.values(chosen)]
+  // Regular component: pairwise compatibility + soft tier preference (tier-satisfying first, desc cost).
+  const allCtx = [...context, ...anchorCtx, ...Object.values(chosen)]
   const tierConds: Array<Record<string, unknown>> = tierCondsPerType[type] ?? []
   const pairwiseOk = available.filter((e) =>
     e.entity_type === type && cachedPairwise(e, allCtx, rules)
@@ -212,66 +221,67 @@ function backtrackFill(
   return null
 }
 
-// Fills types in toFill for a given GPU anchor.
-// Uses generic recursive backtracking driven by cfg.selectionOrder (defaults to fillOrder minus gpu).
-// Priority: highest-cost candidate first for each type; capacity type (psu) always cheapest adequate.
+// Fills types in toFill for a given anchor entity.
+// Uses generic recursive backtracking driven by cfg.selectionOrder.
+// Priority: highest-cost candidate first; capacityType always cheapest adequate.
 function tryFillPackage(
-  gpuAnchor: Entity | null,
+  anchorEntity: Entity | null,
   context: Entity[],
   available: Entity[],
   rules: CompatibilityRule[],
   cfg: DomainConfig,
   budget: number,
-  psuFactor: number,
+  capacityFactor: number,
   toFill: Set<string>,
 ): Record<string, SlotItem[]> | null {
-  const gpuEntity: Entity | null = toFill.has('gpu')
-    ? gpuAnchor
-    : (context.find((e) => e.entity_type === 'gpu') ?? null)
+  const anchorType: string = cfg.anchorType ?? cfg.fillOrder[0]!
 
-  let budgetAfterGpu = budget
-  if (toFill.has('gpu') && gpuAnchor !== null) {
-    const cost = unitCost(gpuAnchor, cfg)
+  const resolvedAnchor: Entity | null = toFill.has(anchorType)
+    ? anchorEntity
+    : (context.find((e) => e.entity_type === anchorType) ?? null)
+
+  let budgetAfterAnchor = budget
+  if (toFill.has(anchorType) && anchorEntity !== null) {
+    const cost = unitCost(anchorEntity, cfg)
     if (cost > budget) return null
-    budgetAfterGpu -= cost
+    budgetAfterAnchor -= cost
   }
 
-  const gpuCtx: Entity[] = gpuEntity ? [gpuEntity] : []
+  const anchorCtx: Entity[] = resolvedAnchor ? [resolvedAnchor] : []
 
-  // Build tier conditions per entity type driven by GPU (data-driven via tierRules config)
+  // Build tier conditions per entity type driven by anchor (data-driven via tierRules config)
   const tierCondsPerType: Record<string, Array<Record<string, unknown>>> = {}
-  if (gpuEntity) {
+  if (resolvedAnchor) {
     for (const type of cfg.entityTypes) {
-      const conds = getTierConditions(gpuEntity, cfg.tierRules ?? [], type)
+      const conds = getTierConditions(resolvedAnchor, cfg.tierRules ?? [], type)
       if (conds.length > 0) tierCondsPerType[type] = conds
     }
   }
 
-  const capacityType = cfg.capacityType ?? 'psu'
-
-  // Selection order from config; fallback: fillOrder minus gpu (GPU handled by specChainFill above)
-  const selectionOrder = cfg.selectionOrder ?? cfg.fillOrder.filter((t) => t !== 'gpu')
+  const capacityType: string = cfg.capacityType ?? cfg.fillOrder[cfg.fillOrder.length - 1]!
+  const selectionOrder = cfg.selectionOrder ?? cfg.fillOrder.filter((t) => t !== anchorType)
 
   const chosen = backtrackFill(
-    selectionOrder, 0, {}, budgetAfterGpu,
-    context, gpuCtx, tierCondsPerType, available, rules, cfg, toFill, psuFactor, capacityType,
+    selectionOrder, 0, {}, budgetAfterAnchor,
+    context, anchorCtx, tierCondsPerType, available, rules, cfg, toFill, capacityFactor, capacityType,
   )
 
   if (chosen === null) return null
 
-  // Post-backtrack slot fill: use dynamicMaxPerType config to fill remaining capacity.
-  // E.g. RAM: backtrack picks 1 kit; here we add more kits if MB has spare slots and budget allows.
-  // Budget and PSU are re-evaluated so power limits are respected.
+  // Post-backtrack slot fill: use dynamicMaxPerType to fill remaining capacity slots.
+  // After backtrack picks 1 unit, try adding more if the source entity has spare slots and budget allows.
+  // Capacity entity is re-evaluated if extra load exceeds current capacity.
   const quantities: Record<string, number> = {}
   const spentInBacktrack = Object.entries(chosen)
     .filter(([t]) => toFill.has(t))
     .reduce((sum, [, e]) => sum + unitCost(e, cfg), 0)
-  let remaining = budgetAfterGpu - spentInBacktrack
+  let remaining = budgetAfterAnchor - spentInBacktrack
+
+  const capAttr = cfg.capacityAttribute ?? 'watt_output'
 
   for (const [type, dynCfg] of Object.entries(cfg.dynamicMaxPerType) as [string, DynamicMaxCfg][]) {
     if (!dynCfg || !toFill.has(type) || !chosen[type]) continue
 
-    // Source entity (e.g. MB) may come from chosen or from pinned context
     const sourceEntity =
       chosen[dynCfg.source_type] ??
       context.find((e) => e.entity_type === dynCfg.source_type)
@@ -285,34 +295,30 @@ function tryFillPackage(
     if (maxQty <= 1) continue
 
     const kitCost = unitCost(chosen[type]!, cfg)
-    const kitPower = Number(chosen[type]!.attributes['power_draw_w'] ?? 0)
+    const kitLoad = entityLoad(chosen[type]!, cfg)
 
-    // Base power already sized for 1 unit; extras add proportional power
-    const basePowerItems = [...context, ...gpuCtx, ...Object.values(chosen)]
+    const baseLoadItems = [...context, ...anchorCtx, ...Object.values(chosen)]
       .filter((e, i, arr) => arr.indexOf(e) === i && e.entity_type !== capacityType)
-    const basePower = totalPowerOf(basePowerItems)
+    const baseLoad = totalLoadOf(baseLoadItems, cfg)
 
-    // Try adding as many extra units as possible (maxQty-1 down to 1)
     for (let extra = maxQty - 1; extra >= 1; extra--) {
       const extraCost = extra * kitCost
       if (extraCost > remaining) continue
 
-      const newPower = basePower + extra * kitPower
-      const newPsuMin = newPower / psuFactor
+      const newLoad = baseLoad + extra * kitLoad
+      const newCapMin = newLoad / capacityFactor
 
-      // Check current capacity entity handles new load
       const currentCap = chosen[capacityType]
-      if (currentCap && Number(currentCap.attributes['watt_output'] ?? 0) >= newPsuMin) {
+      if (currentCap && Number(currentCap.attributes[capAttr] ?? 0) >= newCapMin) {
         quantities[type] = 1 + extra
         remaining -= extraCost
         break
       }
 
-      // Try to upgrade capacity entity within remaining budget
       if (toFill.has(capacityType) && currentCap) {
         const oldCapCost = unitCost(currentCap, cfg)
         const budgetForNewCap = remaining - extraCost + oldCapCost
-        const newCap = findCheapestPsu(available, newPsuMin, budgetForNewCap, cfg)
+        const newCap = findCheapestCapacity(available, newCapMin, budgetForNewCap, cfg)
         if (newCap) {
           remaining -= extraCost + unitCost(newCap, cfg) - oldCapCost
           chosen[capacityType] = newCap
@@ -323,9 +329,9 @@ function tryFillPackage(
     }
   }
 
-  // Assemble result slots — quantity from slot-fill pass or 1 if not filled
+  // Assemble result slots
   const pkg: Record<string, SlotItem[]> = {}
-  if (toFill.has('gpu') && gpuAnchor) pkg['gpu'] = [{ entity: gpuAnchor, quantity: 1 }]
+  if (toFill.has(anchorType) && anchorEntity) pkg[anchorType] = [{ entity: anchorEntity, quantity: 1 }]
   for (const [type, entity] of Object.entries(chosen)) {
     if (!toFill.has(type)) continue
     pkg[type] = [{ entity, quantity: quantities[type] ?? 1 }]
@@ -362,38 +368,39 @@ function specChainFill(
   // Available pool: published & not blocked
   const available = entities.filter((e) => e.status === 'published' && !blockedIds.has(e.id))
 
-  // Context: pinned entities (already in result, for pairwise compat checks)
+  // Context: pinned entities (for pairwise compat checks)
   const pinnedEntities = Object.values(result).flatMap((arr) => arr.map((s) => s.entity))
 
-  const psuFactor = cfg.psuSafetyFactor ?? 0.8
+  const capacityFactor = cfg.capacityFactor ?? 0.8
+  const anchorType: string = cfg.anchorType ?? cfg.fillOrder[0]!
 
   // Types that still need filling
   const toFill = new Set(cfg.entityTypes.filter((t) => !excluded[t] && (result[t] ?? []).length === 0))
 
-  if (!toFill.has('gpu')) {
-    // GPU is pinned or excluded — fill remaining types directly
-    const gpuAnchor = excluded['gpu'] ? null : (result['gpu']?.[0]?.entity ?? null)
-    const pkg = tryFillPackage(gpuAnchor, pinnedEntities, available, rules, cfg, effectiveBudget, psuFactor, toFill)
+  if (!toFill.has(anchorType)) {
+    // Anchor is pinned or excluded — fill remaining types directly
+    const anchorEntity = excluded[anchorType] ? null : (result[anchorType]?.[0]?.entity ?? null)
+    const pkg = tryFillPackage(anchorEntity, pinnedEntities, available, rules, cfg, effectiveBudget, capacityFactor, toFill)
     if (pkg) Object.assign(result, pkg)
     return result
   }
 
-  // Iterate GPU candidates (highest cost first), then try no-GPU
-  const gpuCandidates = available
-    .filter((e) => e.entity_type === 'gpu')
+  // Iterate anchor candidates (highest cost first), then try without anchor
+  const anchorCandidates = available
+    .filter((e) => e.entity_type === anchorType)
     .sort((a, b) => unitCost(b, cfg) - unitCost(a, cfg))
 
-  for (const gpu of gpuCandidates) {
-    const pkg = tryFillPackage(gpu, pinnedEntities, available, rules, cfg, effectiveBudget, psuFactor, toFill)
+  for (const anchor of anchorCandidates) {
+    const pkg = tryFillPackage(anchor, pinnedEntities, available, rules, cfg, effectiveBudget, capacityFactor, toFill)
     if (pkg) {
       Object.assign(result, pkg)
       return result
     }
   }
 
-  // No GPU package fits — try without GPU
-  const noGpuFill = new Set([...toFill].filter((t) => t !== 'gpu'))
-  const pkg = tryFillPackage(null, pinnedEntities, available, rules, cfg, effectiveBudget, psuFactor, noGpuFill)
+  // No anchor package fits — try without anchor
+  const noAnchorFill = new Set([...toFill].filter((t) => t !== anchorType))
+  const pkg = tryFillPackage(null, pinnedEntities, available, rules, cfg, effectiveBudget, capacityFactor, noAnchorFill)
   if (pkg) Object.assign(result, pkg)
 
   return result

@@ -3,7 +3,7 @@ import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entities'
 import {
   FILL_ORDER, MAX_PER_TYPE, DYNAMIC_MAX_PER_TYPE,
   AGGREGATE_GUARD_TYPES, AGGREGATE_DISPLAY, REQUIRED_TYPES,
-  COST_ATTRIBUTE, COST_PRECISION, PSU_SAFETY_FACTOR, SELECTION_ORDER,
+  COST_ATTRIBUTE, COST_PRECISION, CAPACITY_FACTOR, SELECTION_ORDER,
 } from '~/composables/simulationConfig'
 import { TIER_RULES } from '~/composables/tierRules'
 
@@ -19,6 +19,10 @@ export const DEFAULT_DOMAIN_CONFIG: DomainConfig = {
   costAttribute:     COST_ATTRIBUTE,
   costPrecision:     COST_PRECISION,
   tierRules:         [...TIER_RULES],
-  psuSafetyFactor:   PSU_SAFETY_FACTOR,
+  anchorType:        'gpu',
+  capacityType:      'psu',
+  capacityAttribute: 'watt_output',
+  loadAttributes:    ['power_draw_w', 'tdp_w'],
+  capacityFactor:    CAPACITY_FACTOR,
   selectionOrder:    [...SELECTION_ORDER],
 }

@@ -3,6 +3,10 @@ export default defineNuxtConfig({
 
   srcDir: 'app/',
 
+  nitro: {
+    preset: 'cloudflare-pages',
+  },
+
   routeRules: {
     '/**': { ssr: false },
   },

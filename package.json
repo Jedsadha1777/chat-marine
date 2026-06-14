@@ -3,19 +3,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build":       "nuxt build",
-    "dev":         "nuxt dev",
-    "generate":    "nuxt generate",
-    "preview":     "nuxt preview",
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
     "postinstall": "nuxt prepare"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260613.1",
     "@nuxt/devtools": "latest",
     "nuxt": "^4.0.0",
     "vue": "^3.5.0",
-    "vue-router": "^4.4.0"
+    "vue-router": "^4.4.0",
+    "wrangler": "^4.100.0"
   },
   "overrides": {
-  "serialize-javascript": "^7.0.3"
-}
+    "serialize-javascript": "^7.0.3"
+  }
 }

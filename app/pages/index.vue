@@ -2,7 +2,7 @@
 import type { Entity } from '~/data/types'
 import type { SlotItem } from '~/composables/useSimulation'
 import { ENTITY_TYPE_LABELS, type EntityType } from '~/data/entities'
-import { REQUIRED_TYPES } from '~/composables/simulationConfig'
+import { FILL_ORDER, REQUIRED_TYPES } from '~/composables/simulationConfig'
 
 
 const {
@@ -29,11 +29,22 @@ const {
   floorOverflow,
 } = useSimulation()
 
-const SLOT_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard', 'ram', 'psu']
+const SLOT_ORDER = FILL_ORDER as EntityType[]
 const expandedSlot = ref<EntityType | null>(null)
+const pickerEntities = ref<Entity[]>([])
+const pickerLoading = ref(false)
 
-function toggleExpand(type: EntityType) {
-  expandedSlot.value = expandedSlot.value === type ? null : type
+function closePicker() {
+  expandedSlot.value = null
+  pickerEntities.value = []
+}
+
+async function toggleExpand(type: EntityType) {
+  if (expandedSlot.value === type) { closePicker(); return }
+  expandedSlot.value = type
+  pickerLoading.value = true
+  pickerEntities.value = await compatibleEntitiesFor(type)
+  pickerLoading.value = false
 }
 
 function selectPin(type: EntityType, entity: Entity) {
@@ -269,7 +280,7 @@ const powerPct = computed(() => {
     <!-- Lightbox picker -->
     <Teleport to="body">
       <Transition name="lb">
-        <div v-if="expandedSlot" class="lb-backdrop" @click.self="expandedSlot = null">
+        <div v-if="expandedSlot" class="lb-backdrop" @click.self="closePicker()">
           <div class="lb-modal" role="dialog">
             <div class="lb-header">
               <div class="lb-title">
@@ -278,7 +289,7 @@ const powerPct = computed(() => {
                   (สูงสุด {{ slotLimit(expandedSlot) }} ชิ้น)
                 </span>
               </div>
-              <button class="lb-close" @click="expandedSlot = null">✕</button>
+              <button class="lb-close" @click="closePicker()">✕</button>
             </div>
 
             <div class="lb-body">
@@ -299,7 +310,9 @@ const powerPct = computed(() => {
 
               <div class="pick-divider"></div>
 
-              <div v-for="entity in compatibleEntitiesFor(expandedSlot)" :key="entity.id"
+              <div v-if="pickerLoading" class="pick-loading">กำลังโหลด...</div>
+
+              <div v-for="entity in pickerEntities" :key="entity.id"
                 class="pick-row"
                 :class="{ 'pick-active': pinned[expandedSlot].some((s) => s.entity.id === entity.id) }">
                 <span class="pick-name" @click="selectPin(expandedSlot, entity)">
@@ -328,7 +341,7 @@ const powerPct = computed(() => {
             </div>
 
             <div class="lb-footer">
-              <button class="btn-sm btn-primary" @click="expandedSlot = null">ตกลง</button>
+              <button class="btn-sm btn-primary" @click="closePicker()">ตกลง</button>
             </div>
           </div>
         </div>

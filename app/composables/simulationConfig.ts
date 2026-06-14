@@ -42,8 +42,8 @@ export const REQUIRED_TYPES: EntityType[] = ['cpu', 'motherboard', 'ram', 'psu']
 // RAM first → maximize capacity; then CPU quality; then MB quality; PSU always cheapest adequate.
 export const SELECTION_ORDER: EntityType[] = ['ram', 'cpu', 'motherboard', 'psu']
 
-// PSU safety factor — total draw must not exceed this fraction of PSU wattage
-export const PSU_SAFETY_FACTOR = 0.8
+// Safety factor — total load must not exceed this fraction of capacity entity's capacity attribute
+export const CAPACITY_FACTOR = 0.8
 
 export const COST_ATTRIBUTE = 'unit_cost'
 export const COST_PRECISION = 0

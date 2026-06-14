@@ -263,9 +263,6 @@ export const ENTITIES: Entity[] = [
   },
 ]
 
-export const ENTITIES_BY_TYPE = (type: string): Entity[] =>
-  ENTITIES.filter((e) => e.entity_type === type)
-
 export const ENTITY_TYPES = ['motherboard', 'cpu', 'ram', 'gpu', 'psu'] as const
 export type EntityType = (typeof ENTITY_TYPES)[number]
 
