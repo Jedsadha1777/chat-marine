@@ -1,7 +1,7 @@
 import type { CompatibilityRule, Entity, ValidationIssue } from '~/data/types'
 import { render } from '~/engine/template'
 
-function evalLogic(logic: unknown, data: Record<string, unknown>): boolean {
+export function evalLogic(logic: unknown, data: Record<string, unknown>): boolean {
   if (typeof logic !== 'object' || logic === null) return Boolean(logic)
 
   const entries = Object.entries(logic as Record<string, unknown>)

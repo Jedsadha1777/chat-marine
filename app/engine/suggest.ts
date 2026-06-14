@@ -5,8 +5,9 @@ import type {
   ValidationIssue,
   BomItem,
 } from '~/data/types'
-import { runPairwise } from '~/engine/pairwise'
+import { runPairwise, evalLogic } from '~/engine/pairwise'
 import { runAggregate, getAggregateDetail } from '~/engine/aggregate'
+import { getTierConditions, type TierRule } from '~/composables/tierRules'
 
 export interface DynamicMaxCfg {
   source_type: string
@@ -21,20 +22,18 @@ export interface DomainConfig {
   entityTypeLabels: Record<string, string>
   maxPerType: Partial<Record<string, number>>
   dynamicMaxPerType: Partial<Record<string, DynamicMaxCfg>>
-  quantityMode: 'unique' | 'stack'
-  quantityModePerType: Partial<Record<string, 'unique' | 'stack'>>
-  selectionStrategy: 'highest_cost' | 'lowest_cost' | 'best_fit'
-  selectionStrategyPerType?: Partial<Record<string, 'highest_cost' | 'lowest_cost' | 'best_fit'>>
-  budgetFloorPerType: Partial<Record<string, number>>
-  hardFloorMin: Partial<Record<string, number>>
-  stackDistributeMode: 'sequential' | 'round_robin'
   aggregateGuardTypes: string[]
   aggregateDisplay: { primary: string; safety: string | null }
   requiredTypes: string[]
   costAttribute: string
   costPrecision: number
-  maxRepairIterations?: number
-  upgradeOrder?: string[]
+  tierRules?: TierRule[]
+  psuSafetyFactor?: number
+  // Priority order for non-GPU component selection (desc cost). PSU always last (cheapest adequate).
+  // Defaults to fillOrder minus 'gpu'. Configure per domain to control budget allocation priority.
+  selectionOrder?: string[]
+  // The type that uses cheapest-adequate selection instead of best-first. Defaults to 'psu'.
+  capacityType?: string
 }
 
 export interface SlotItem {
@@ -55,12 +54,12 @@ export interface SuggestResult {
   repairedBlockedIds: number[]
 }
 
-function unitCost(e: Entity, cfg: DomainConfig): number {
+export function unitCost(e: Entity, cfg: DomainConfig): number {
   const raw = e.attributes[cfg.costAttribute] ?? 0
   return parseFloat(Number(raw).toFixed(cfg.costPrecision))
 }
 
-function slotCost(s: SlotItem, cfg: DomainConfig): number {
+export function slotCost(s: SlotItem, cfg: DomainConfig): number {
   return unitCost(s.entity, cfg) * s.quantity
 }
 
@@ -75,26 +74,7 @@ export function toSimItems(slots: Record<string, SlotItem[]>, cfg: DomainConfig)
   )
 }
 
-function sortCandidates(
-  candidates: Entity[],
-  remaining: number,
-  cfg: DomainConfig,
-  strategy?: 'highest_cost' | 'lowest_cost' | 'best_fit',
-): Entity[] {
-  const copy = [...candidates]
-  switch (strategy ?? cfg.selectionStrategy) {
-    case 'lowest_cost':
-      return copy.sort((a, b) => unitCost(a, cfg) - unitCost(b, cfg))
-    case 'best_fit':
-      return copy.sort(
-        (a, b) => Math.abs(unitCost(a, cfg) - remaining) - Math.abs(unitCost(b, cfg) - remaining),
-      )
-    default:
-      return copy.sort((a, b) => unitCost(b, cfg) - unitCost(a, cfg))
-  }
-}
-
-function maxFor(type: string, cfg: DomainConfig, slots?: Record<string, SlotItem[]>): number {
+export function maxFor(type: string, cfg: DomainConfig, slots?: Record<string, SlotItem[]>): number {
   if (cfg.maxPerType[type] !== undefined) return cfg.maxPerType[type]!
   const dynCfg = cfg.dynamicMaxPerType[type]
   if (dynCfg && slots) {
@@ -108,12 +88,7 @@ function maxFor(type: string, cfg: DomainConfig, slots?: Record<string, SlotItem
   return Infinity
 }
 
-function uniqueEntities(entities: Entity[]): Entity[] {
-  const seen = new Set<number>()
-  return entities.filter((e) => { if (seen.has(e.id)) return false; seen.add(e.id); return true })
-}
-
-function usedCapacity(type: string, items: SlotItem[], cfg: DomainConfig): number {
+export function usedCapacity(type: string, items: SlotItem[], cfg: DomainConfig): number {
   const dynCfg = cfg.dynamicMaxPerType[type]
   if (!dynCfg?.capacity_attribute) {
     return items.reduce((sum, s) => sum + s.quantity, 0)
@@ -122,53 +97,14 @@ function usedCapacity(type: string, items: SlotItem[], cfg: DomainConfig): numbe
   return items.reduce((sum, s) => sum + Number(s.entity.attributes[attr] ?? 1) * s.quantity, 0)
 }
 
-function remainingCapacity(type: string, items: SlotItem[], limit: number, cfg: DomainConfig): number {
-  return limit - usedCapacity(type, items, cfg)
-}
-
-interface FloorResult {
-  floor: Record<string, number>
-  overflow: boolean
-}
-
-function computeFloor(totalBudget: number, freeTypes: string[], cfg: DomainConfig): FloorResult {
-  const raw = Object.fromEntries(
-    freeTypes.map((t) => [t, totalBudget * (cfg.budgetFloorPerType[t] ?? 0)]),
-  ) as Record<string, number>
-
-  const totalHardMin = freeTypes.reduce((s, t) => s + (cfg.hardFloorMin[t] ?? 0), 0)
-  const overflow = totalHardMin > totalBudget
-
-  const total = freeTypes.reduce((s, t) => s + (raw[t] ?? 0), 0)
-  let floor: Record<string, number>
-
-  if (total > totalBudget && total > 0) {
-    const scale = totalBudget / total
-    floor = Object.fromEntries(
-      freeTypes.map((t) => {
-        const hardMin = cfg.hardFloorMin[t] ?? 0
-        const scaled = (raw[t] ?? 0) * scale
-        return [t, Math.min(totalBudget, Math.max(hardMin, scaled))]
-      }),
-    ) as Record<string, number>
-  } else {
-    floor = Object.fromEntries(
-      freeTypes.map((t) => [t, Math.max(raw[t] ?? 0, cfg.hardFloorMin[t] ?? 0)]),
-    ) as Record<string, number>
-  }
-
-  const totalFloor = freeTypes.reduce((s, t) => s + (floor[t] ?? 0), 0)
-  if (totalFloor > totalBudget && totalFloor > 0) {
-    const scale = totalBudget / totalFloor
-    for (const t of freeTypes) floor[t] = Math.floor((floor[t] ?? 0) * scale)
-  }
-
-  return { floor, overflow }
+export function uniqueEntities(entities: Entity[]): Entity[] {
+  const seen = new Set<number>()
+  return entities.filter((e) => { if (seen.has(e.id)) return false; seen.add(e.id); return true })
 }
 
 const _pwCacheByRules = new WeakMap<CompatibilityRule[], Map<string, boolean>>()
 
-function cachedPairwise(candidate: Entity, others: Entity[], rules: CompatibilityRule[]): boolean {
+export function cachedPairwise(candidate: Entity, others: Entity[], rules: CompatibilityRule[]): boolean {
   let cache = _pwCacheByRules.get(rules)
   if (!cache) { cache = new Map(); _pwCacheByRules.set(rules, cache) }
 
@@ -191,234 +127,281 @@ function cachedPairwise(candidate: Entity, others: Entity[], rules: Compatibilit
   return true
 }
 
-function passesAggregate(items: SimulationItem[], rules: CompatibilityRule[]): boolean {
-  return rules.filter(
-    (r) => r.is_active && r.check_type === 'aggregate' && r.severity === 'error',
-  ).every((rule) => runAggregate(rule, items, {}).length === 0)
+// ── Spec-chain engine helpers ────────────────────────────────────────────────
+
+function findCheapestPsu(
+  available: Entity[],
+  minWatts: number,
+  maxCost: number,
+  cfg: DomainConfig,
+): Entity | null {
+  return available
+    .filter((e) =>
+      e.entity_type === 'psu' &&
+      Number(e.attributes['watt_output'] ?? 0) >= minWatts &&
+      unitCost(e, cfg) <= maxCost
+    )
+    .sort((a, b) => unitCost(a, cfg) - unitCost(b, cfg))[0] ?? null
 }
 
-function passesAggregateWithQty(
-  result: Record<string, SlotItem[]>,
-  type: string,
-  entity: Entity,
-  qty: number,
+function totalPowerOf(entities: Entity[]): number {
+  return entities.reduce(
+    (sum, e) => sum + Number(e.attributes['power_draw_w'] ?? e.attributes['tdp_w'] ?? 0),
+    0,
+  )
+}
+
+// Generic recursive backtracking fill.
+// Iterates selectionOrder types in priority sequence, trying highest-cost candidates first.
+// capacityType (default 'psu') uses cheapest-adequate selection instead of best-first.
+// Returns chosen entity map or null if no valid combination fits within budget.
+function backtrackFill(
+  selectionOrder: string[],
+  index: number,
+  chosen: Record<string, Entity>,
+  remainingBudget: number,
+  context: Entity[],
+  gpuCtx: Entity[],
+  tierCondsPerType: Record<string, Array<Record<string, unknown>>>,
+  available: Entity[],
   rules: CompatibilityRule[],
   cfg: DomainConfig,
-): boolean {
-  const testSlots = {
-    ...result,
-    [type]: [...(result[type] ?? []), { entity, quantity: qty }],
+  toFill: Set<string>,
+  psuFactor: number,
+  capacityType: string,
+): Record<string, Entity> | null {
+  if (index === selectionOrder.length) return chosen
+
+  const type: string = selectionOrder[index]!
+  const recurse = (next: Record<string, Entity>, budget: number) =>
+    backtrackFill(selectionOrder, index + 1, next, budget, context, gpuCtx, tierCondsPerType, available, rules, cfg, toFill, psuFactor, capacityType)
+
+  if (!toFill.has(type)) return recurse(chosen, remainingBudget)
+
+  // Capacity type (e.g. PSU): cheapest that meets the aggregate requirement
+  if (type === capacityType) {
+    const powerItems = [...context, ...gpuCtx, ...Object.values(chosen)]
+      .filter((e, i, arr) => arr.indexOf(e) === i && e.entity_type !== capacityType)
+    const psu = findCheapestPsu(available, totalPowerOf(powerItems) / psuFactor, remainingBudget, cfg)
+    if (!psu) return null
+    return { ...chosen, [type]: psu }
   }
-  return passesAggregate(toSimItems(testSlots, cfg), rules)
+
+  // Regular component: check pairwise compatibility, then sort by tier preference + cost.
+  // Tier conditions are SOFT PREFERENCES: tier-satisfying candidates are tried first (desc cost),
+  // followed by non-tier candidates (desc cost) as fallback. GPU is never blocked by tier alone.
+  const allCtx = [...context, ...gpuCtx, ...Object.values(chosen)]
+  const tierConds: Array<Record<string, unknown>> = tierCondsPerType[type] ?? []
+  const pairwiseOk = available.filter((e) =>
+    e.entity_type === type && cachedPairwise(e, allCtx, rules)
+  )
+  const satisfiesTier = (e: Entity): boolean =>
+    tierConds.every((c: Record<string, unknown>) => evalLogic(c, { attributes: e.attributes }))
+  const byDescCost = (a: Entity, b: Entity): number => unitCost(b, cfg) - unitCost(a, cfg)
+  const candidates = [
+    ...pairwiseOk.filter(satisfiesTier).sort(byDescCost),
+    ...pairwiseOk.filter((e) => !satisfiesTier(e)).sort(byDescCost),
+  ]
+
+  for (const candidate of candidates) {
+    const cost = unitCost(candidate, cfg)
+    if (cost > remainingBudget) continue
+    const result = recurse({ ...chosen, [type]: candidate }, remainingBudget - cost)
+    if (result !== null) return result
+  }
+
+  return null
 }
 
-function greedyFill(
+// Fills types in toFill for a given GPU anchor.
+// Uses generic recursive backtracking driven by cfg.selectionOrder (defaults to fillOrder minus gpu).
+// Priority: highest-cost candidate first for each type; capacity type (psu) always cheapest adequate.
+function tryFillPackage(
+  gpuAnchor: Entity | null,
+  context: Entity[],
+  available: Entity[],
+  rules: CompatibilityRule[],
+  cfg: DomainConfig,
+  budget: number,
+  psuFactor: number,
+  toFill: Set<string>,
+): Record<string, SlotItem[]> | null {
+  const gpuEntity: Entity | null = toFill.has('gpu')
+    ? gpuAnchor
+    : (context.find((e) => e.entity_type === 'gpu') ?? null)
+
+  let budgetAfterGpu = budget
+  if (toFill.has('gpu') && gpuAnchor !== null) {
+    const cost = unitCost(gpuAnchor, cfg)
+    if (cost > budget) return null
+    budgetAfterGpu -= cost
+  }
+
+  const gpuCtx: Entity[] = gpuEntity ? [gpuEntity] : []
+
+  // Build tier conditions per entity type driven by GPU (data-driven via tierRules config)
+  const tierCondsPerType: Record<string, Array<Record<string, unknown>>> = {}
+  if (gpuEntity) {
+    for (const type of cfg.entityTypes) {
+      const conds = getTierConditions(gpuEntity, cfg.tierRules ?? [], type)
+      if (conds.length > 0) tierCondsPerType[type] = conds
+    }
+  }
+
+  const capacityType = cfg.capacityType ?? 'psu'
+
+  // Selection order from config; fallback: fillOrder minus gpu (GPU handled by specChainFill above)
+  const selectionOrder = cfg.selectionOrder ?? cfg.fillOrder.filter((t) => t !== 'gpu')
+
+  const chosen = backtrackFill(
+    selectionOrder, 0, {}, budgetAfterGpu,
+    context, gpuCtx, tierCondsPerType, available, rules, cfg, toFill, psuFactor, capacityType,
+  )
+
+  if (chosen === null) return null
+
+  // Post-backtrack slot fill: use dynamicMaxPerType config to fill remaining capacity.
+  // E.g. RAM: backtrack picks 1 kit; here we add more kits if MB has spare slots and budget allows.
+  // Budget and PSU are re-evaluated so power limits are respected.
+  const quantities: Record<string, number> = {}
+  const spentInBacktrack = Object.entries(chosen)
+    .filter(([t]) => toFill.has(t))
+    .reduce((sum, [, e]) => sum + unitCost(e, cfg), 0)
+  let remaining = budgetAfterGpu - spentInBacktrack
+
+  for (const [type, dynCfg] of Object.entries(cfg.dynamicMaxPerType) as [string, DynamicMaxCfg][]) {
+    if (!dynCfg || !toFill.has(type) || !chosen[type]) continue
+
+    // Source entity (e.g. MB) may come from chosen or from pinned context
+    const sourceEntity =
+      chosen[dynCfg.source_type] ??
+      context.find((e) => e.entity_type === dynCfg.source_type)
+    if (!sourceEntity) continue
+
+    const slotCapacity = Number(sourceEntity.attributes[dynCfg.source_attribute] ?? 0)
+    const unitCap = dynCfg.capacity_attribute
+      ? Number(chosen[type]!.attributes[dynCfg.capacity_attribute] ?? 1)
+      : 1
+    const maxQty = unitCap > 0 ? Math.floor(slotCapacity / unitCap) : 1
+    if (maxQty <= 1) continue
+
+    const kitCost = unitCost(chosen[type]!, cfg)
+    const kitPower = Number(chosen[type]!.attributes['power_draw_w'] ?? 0)
+
+    // Base power already sized for 1 unit; extras add proportional power
+    const basePowerItems = [...context, ...gpuCtx, ...Object.values(chosen)]
+      .filter((e, i, arr) => arr.indexOf(e) === i && e.entity_type !== capacityType)
+    const basePower = totalPowerOf(basePowerItems)
+
+    // Try adding as many extra units as possible (maxQty-1 down to 1)
+    for (let extra = maxQty - 1; extra >= 1; extra--) {
+      const extraCost = extra * kitCost
+      if (extraCost > remaining) continue
+
+      const newPower = basePower + extra * kitPower
+      const newPsuMin = newPower / psuFactor
+
+      // Check current capacity entity handles new load
+      const currentCap = chosen[capacityType]
+      if (currentCap && Number(currentCap.attributes['watt_output'] ?? 0) >= newPsuMin) {
+        quantities[type] = 1 + extra
+        remaining -= extraCost
+        break
+      }
+
+      // Try to upgrade capacity entity within remaining budget
+      if (toFill.has(capacityType) && currentCap) {
+        const oldCapCost = unitCost(currentCap, cfg)
+        const budgetForNewCap = remaining - extraCost + oldCapCost
+        const newCap = findCheapestPsu(available, newPsuMin, budgetForNewCap, cfg)
+        if (newCap) {
+          remaining -= extraCost + unitCost(newCap, cfg) - oldCapCost
+          chosen[capacityType] = newCap
+          quantities[type] = 1 + extra
+          break
+        }
+      }
+    }
+  }
+
+  // Assemble result slots — quantity from slot-fill pass or 1 if not filled
+  const pkg: Record<string, SlotItem[]> = {}
+  if (toFill.has('gpu') && gpuAnchor) pkg['gpu'] = [{ entity: gpuAnchor, quantity: 1 }]
+  for (const [type, entity] of Object.entries(chosen)) {
+    if (!toFill.has(type)) continue
+    pkg[type] = [{ entity, quantity: quantities[type] ?? 1 }]
+  }
+  return pkg
+}
+
+// ── Spec-chain fill ──────────────────────────────────────────────────────────
+
+function specChainFill(
   entities: Entity[],
   rules: CompatibilityRule[],
   cfg: DomainConfig,
-  input: Required<Pick<SuggestInput, 'budget'>> & {
+  input: {
+    budget: number
     pinned: Record<string, SlotItem[]>
     excluded: Record<string, boolean>
     blockedIds: Set<number>
   },
-): { slots: Record<string, SlotItem[]>; overflow: boolean } {
+): Record<string, SlotItem[]> {
   const { budget, pinned, excluded, blockedIds } = input
   const result = emptySlots(cfg)
 
+  // Apply pinned items and compute spent-so-far
+  let pinnedCost = 0
   for (const type of cfg.entityTypes) {
-    result[type] = excluded[type] ? [] : (pinned[type] ?? []).map((s) => ({ ...s }))
+    if (!excluded[type]) {
+      result[type] = (pinned[type] ?? []).map((s) => ({ ...s }))
+      pinnedCost += result[type].reduce((s, i) => s + slotCost(i, cfg), 0)
+    }
+  }
+  const effectiveBudget = budget - pinnedCost
+
+  // Available pool: published & not blocked
+  const available = entities.filter((e) => e.status === 'published' && !blockedIds.has(e.id))
+
+  // Context: pinned entities (already in result, for pairwise compat checks)
+  const pinnedEntities = Object.values(result).flatMap((arr) => arr.map((s) => s.entity))
+
+  const psuFactor = cfg.psuSafetyFactor ?? 0.8
+
+  // Types that still need filling
+  const toFill = new Set(cfg.entityTypes.filter((t) => !excluded[t] && (result[t] ?? []).length === 0))
+
+  if (!toFill.has('gpu')) {
+    // GPU is pinned or excluded — fill remaining types directly
+    const gpuAnchor = excluded['gpu'] ? null : (result['gpu']?.[0]?.entity ?? null)
+    const pkg = tryFillPackage(gpuAnchor, pinnedEntities, available, rules, cfg, effectiveBudget, psuFactor, toFill)
+    if (pkg) Object.assign(result, pkg)
+    return result
   }
 
-  const pinnedCost = cfg.entityTypes
-    .filter((t) => !excluded[t])
-    .reduce((sum, t) => sum + (result[t] ?? []).reduce((s, i) => s + slotCost(i, cfg), 0), 0)
+  // Iterate GPU candidates (highest cost first), then try no-GPU
+  const gpuCandidates = available
+    .filter((e) => e.entity_type === 'gpu')
+    .sort((a, b) => unitCost(b, cfg) - unitCost(a, cfg))
 
-  const remaining = budget !== null ? budget - pinnedCost : Infinity
-  const freeTypes = cfg.fillOrder.filter((t) => !excluded[t] && (result[t] ?? []).length === 0)
-
-  const { floor, overflow } = budget !== null
-    ? computeFloor(remaining, freeTypes, cfg)
-    : {
-      floor: Object.fromEntries(cfg.entityTypes.map((t) => [t, 0])) as Record<string, number>,
-      overflow: false,
-    }
-
-  const totalFloor = freeTypes.reduce((s, t) => s + (floor[t] ?? 0), 0)
-  let fillBudget = Math.max(0, remaining - totalFloor)
-
-  for (const type of cfg.fillOrder) {
-    if (excluded[type]) continue
-    if ((pinned[type] ?? []).length > 0) continue
-    const limit = maxFor(type, cfg, result)
-    if (usedCapacity(type, result[type] ?? [], cfg) >= limit) continue
-
-    const filled = cfg.entityTypes.flatMap((t) => (result[t] ?? []).map((s) => s.entity))
-    const typeBudget = fillBudget + (floor[type] ?? 0)
-
-    const filtered = entities.filter((e) => {
-      if (e.status !== 'published') return false
-      if (e.entity_type !== type) return false
-      if (unitCost(e, cfg) > typeBudget) return false
-      if (blockedIds.has(e.id) && !(pinned[type] ?? []).some((s) => s.entity.id === e.id)) return false
-      if (!cachedPairwise(e, filled, rules)) return false
-      if (cfg.aggregateGuardTypes.includes(type)) {
-        if (!passesAggregateWithQty(result, type, e, 1, rules, cfg)) return false
-      }
-      return true
-    })
-
-    const sorted = sortCandidates(filtered, typeBudget, cfg, cfg.selectionStrategyPerType?.[type])
-    const effectiveMode = cfg.quantityModePerType[type] ?? cfg.quantityMode
-
-    if (effectiveMode === 'stack') {
-      const dynCapCfg = cfg.dynamicMaxPerType[type]
-      const capAttr = dynCapCfg?.capacity_attribute
-
-      if (cfg.stackDistributeMode === 'round_robin') {
-        let typeRemaining = typeBudget
-        let added = true
-        while (added && usedCapacity(type, result[type] ?? [], cfg) < limit && typeRemaining >= 0) {
-          added = false
-          for (const e of sorted) {
-            const capPerKit = capAttr ? Number(e.attributes[capAttr] ?? 1) : 1
-            const remCap = remainingCapacity(type, result[type] ?? [], limit, cfg)
-            if (remCap < capPerKit || remCap <= 0) continue
-            const c = unitCost(e, cfg)
-            if (c > 0 && c > typeRemaining) continue
-            if (cfg.aggregateGuardTypes.includes(type)) {
-              if (!passesAggregateWithQty(result, type, e, 1, rules, cfg)) continue
-            }
-            const typeSlot = (result[type] ??= [])
-            const existing = typeSlot.find((s) => s.entity.id === e.id)
-            if (existing) { existing.quantity++ } else { typeSlot.push({ entity: e, quantity: 1 }) }
-            if (c > 0) typeRemaining -= c
-            added = true
-          }
-        }
-        const spent = isFinite(typeBudget) ? typeBudget - typeRemaining : 0
-        if (isFinite(spent)) fillBudget = Math.max(0, fillBudget - Math.max(0, spent - (floor[type] ?? 0)))
-
-      } else {
-        let typeRemaining = typeBudget
-
-        for (const e of sorted) {
-          if ((result[type] ?? []).some((s) => s.entity.id === e.id)) continue
-          if (usedCapacity(type, result[type] ?? [], cfg) >= limit) break
-          const c = unitCost(e, cfg)
-          const capPerKit = capAttr ? Number(e.attributes[capAttr] ?? 1) : 1
-          const remCap = remainingCapacity(type, result[type] ?? [], limit, cfg)
-          const slotsLeft = capPerKit > 0 ? Math.floor(remCap / capPerKit) : remCap
-          const maxQty = c > 0 ? Math.min(slotsLeft, Math.floor(typeRemaining / c)) : slotsLeft > 0 ? 1 : 0
-          if (maxQty < 1) continue
-          let qty = maxQty
-          if (cfg.aggregateGuardTypes.includes(type) && !passesAggregateWithQty(result, type, e, qty, rules, cfg)) {
-            qty = qty - 1
-            while (qty > 0 && !passesAggregateWithQty(result, type, e, qty, rules, cfg)) qty--
-            if (qty < 1) continue
-          }
-          ;(result[type] ??= []).push({ entity: e, quantity: qty })
-          if (c > 0) typeRemaining -= c * qty
-        }
-
-        const spent = isFinite(typeBudget) ? typeBudget - typeRemaining : 0
-        if (isFinite(spent)) fillBudget = Math.max(0, fillBudget - Math.max(0, spent - (floor[type] ?? 0)))
-      }
-
-    } else {
-      let typeRemaining = typeBudget
-      for (const e of sorted) {
-        if ((result[type] ?? []).length >= limit) break
-        if ((result[type] ?? []).some((s) => s.entity.id === e.id)) continue
-        if (unitCost(e, cfg) > typeRemaining) continue
-        if (cfg.aggregateGuardTypes.includes(type)) {
-          if (!passesAggregateWithQty(result, type, e, 1, rules, cfg)) continue
-        }
-        ;(result[type] ??= []).push({ entity: e, quantity: 1 })
-        typeRemaining -= unitCost(e, cfg)
-      }
-      const spent = isFinite(typeBudget) ? typeBudget - typeRemaining : 0
-      if (isFinite(spent)) fillBudget = Math.max(0, fillBudget - Math.max(0, spent - (floor[type] ?? 0)))
+  for (const gpu of gpuCandidates) {
+    const pkg = tryFillPackage(gpu, pinnedEntities, available, rules, cfg, effectiveBudget, psuFactor, toFill)
+    if (pkg) {
+      Object.assign(result, pkg)
+      return result
     }
   }
 
-  return { slots: result, overflow }
-}
-
-/**
- * Rule ความโลภแยกต่างหาก — upgrade pass
- *
- * หลัง repair loop: สำหรับแต่ละ type ใน upgradeOrder (เช่น gpu, cpu, mb)
- * พยายาม upgrade component ปัจจุบันโดย:
- *   1. ใช้งบที่เหลือโดยตรง
- *   2. ถ้าไม่พอ: ขาย RAM 1 kit (qty > 1 → ยังเหลืออย่างน้อย 1) แล้ว upgrade
- * ไม่แตะ pinned items — ทำงานกับ slots ที่ greedy fill ได้
- */
-function upgradePass(
-  slots: Record<string, SlotItem[]>,
-  entities: Entity[],
-  rules: CompatibilityRule[],
-  cfg: DomainConfig,
-  budget: number,
-): Record<string, SlotItem[]> {
-  if (!cfg.upgradeOrder?.length) return slots
-
-  const result: Record<string, SlotItem[]> = Object.fromEntries(
-    Object.entries(slots).map(([k, v]) => [k, [...v]]),
-  )
-
-  for (const upgradeType of cfg.upgradeOrder) {
-    const current = (result[upgradeType] ?? [])[0]
-    if (!current) continue
-
-    const currentCost = unitCost(current.entity, cfg)
-    const remaining = budget - totalCostOf(result, cfg)
-
-    const filled = cfg.entityTypes.flatMap((t) =>
-      t === upgradeType ? [] : (result[t] ?? []).map((s) => s.entity),
-    )
-
-    const candidates = entities
-      .filter((e) => e.entity_type === upgradeType && e.status === 'published')
-      .filter((e) => unitCost(e, cfg) > currentCost)
-      .filter((e) => cachedPairwise(e, filled, rules))
-      .sort((a, b) => unitCost(b, cfg) - unitCost(a, cfg))
-
-    // 1. Direct upgrade with remaining budget
-    const directUpgrade = candidates.find((e) => unitCost(e, cfg) - currentCost <= remaining)
-    if (directUpgrade) {
-      result[upgradeType] = [{ entity: directUpgrade, quantity: 1 }]
-      continue
-    }
-
-    // 2. Trade 1 RAM kit for upgrade (RAM qty must stay ≥ 1)
-    const ramItems = result['ram'] ?? []
-    const totalRamQty = ramItems.reduce((s, i) => s + i.quantity, 0)
-    if (totalRamQty > 1 && ramItems[0]) {
-      const ramKitCost = unitCost(ramItems[0].entity, cfg)
-      const tradeUpgrade = candidates.find(
-        (e) => unitCost(e, cfg) - currentCost <= remaining + ramKitCost,
-      )
-      if (tradeUpgrade) {
-        const firstRam = ramItems[0]
-        result['ram'] =
-          firstRam.quantity > 1
-            ? [{ entity: firstRam.entity, quantity: firstRam.quantity - 1 }, ...ramItems.slice(1)]
-            : ramItems.slice(1)
-        result[upgradeType] = [{ entity: tradeUpgrade, quantity: 1 }]
-      }
-    }
-  }
+  // No GPU package fits — try without GPU
+  const noGpuFill = new Set([...toFill].filter((t) => t !== 'gpu'))
+  const pkg = tryFillPackage(null, pinnedEntities, available, rules, cfg, effectiveBudget, psuFactor, noGpuFill)
+  if (pkg) Object.assign(result, pkg)
 
   return result
 }
 
-/**
- * สร้าง suggestion พร้อม repair loop
- *
- * ถ้า required type ขาด: block ชิ้นที่แพงที่สุดใน slot ที่ไม่ได้ pin
- * แล้ว fill ใหม่ วนจนกว่าจะครบ หรือไม่มีอะไรให้ block แล้ว
- * กรณีงบไม่พอจริงคืนชุดที่ขาดน้อยที่สุด
- */
+// ── Public API ───────────────────────────────────────────────────────────────
+
 export function buildSuggestion(
   entities: Entity[],
   rules: CompatibilityRule[],
@@ -431,65 +414,18 @@ export function buildSuggestion(
   const excluded = Object.fromEntries(
     cfg.entityTypes.map((t) => [t, input.excluded?.[t] ?? false]),
   ) as Record<string, boolean>
-  const userBlocked = new Set(input.blockedIds ?? [])
+  const blockedIds = new Set(input.blockedIds ?? [])
 
-  const repairBlocked = new Set<number>()
-  const maxIter = cfg.maxRepairIterations ?? entities.length
-
-  let attempt = greedyFill(entities, rules, cfg, {
-    budget: input.budget, pinned, excluded, blockedIds: userBlocked,
+  const slots = specChainFill(entities, rules, cfg, {
+    budget: input.budget ?? Infinity,
+    pinned,
+    excluded,
+    blockedIds,
   })
 
-  const missingOf = (a: typeof attempt) =>
-    cfg.requiredTypes.filter((t) => !excluded[t] && (a.slots[t] ?? []).length === 0)
-
-  let best = attempt
-  let bestMissing = missingOf(attempt).length
-  let bestCost = totalCostOf(attempt.slots, cfg)
-  let bestBlocked: number[] = []
-
-  if (input.budget !== null) {
-    for (let i = 0; i < maxIter; i++) {
-      const missing = missingOf(attempt)
-      if (missing.length === 0) break
-
-      let victim: Entity | null = null
-      let victimCost = -Infinity
-      for (const t of cfg.fillOrder) {
-        if ((pinned[t] ?? []).length > 0) continue
-        if (missing.includes(t)) continue
-        for (const s of (attempt.slots[t] ?? [])) {
-          const c = slotCost(s, cfg)
-          if (c > victimCost) { victimCost = c; victim = s.entity }
-        }
-      }
-      if (!victim) break
-
-      repairBlocked.add(victim.id)
-      attempt = greedyFill(entities, rules, cfg, {
-        budget: input.budget, pinned, excluded,
-        blockedIds: new Set([...userBlocked, ...repairBlocked]),
-      })
-
-      const m = missingOf(attempt).length
-      const c = totalCostOf(attempt.slots, cfg)
-      if (m < bestMissing || (m === bestMissing && c > bestCost)) {
-        best = attempt; bestMissing = m; bestCost = c; bestBlocked = [...repairBlocked]
-      }
-    }
-  }
-
-  const finalSlots =
-    input.budget !== null && cfg.upgradeOrder?.length
-      ? upgradePass(best.slots, entities, rules, cfg, input.budget)
-      : best.slots
-
-  return { slots: finalSlots, overflow: best.overflow, repairedBlockedIds: bestBlocked }
+  return { slots, overflow: false, repairedBlockedIds: [] }
 }
 
-/**
- * Validate ชุด items กับ rules ทั้งหมด (pairwise + aggregate + required types)
- */
 export function validateItems(
   items: SimulationItem[],
   rules: CompatibilityRule[],
@@ -564,5 +500,3 @@ export function totalCostOf(slots: Record<string, SlotItem[]>, cfg: DomainConfig
     (sum, t) => sum + (slots[t] ?? []).reduce((s, i) => s + slotCost(i, cfg), 0), 0,
   )
 }
-
-export { unitCost, slotCost, maxFor, usedCapacity, uniqueEntities, cachedPairwise }

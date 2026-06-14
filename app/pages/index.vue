@@ -185,71 +185,10 @@ const powerPct = computed(() => {
                   <button class="btn-sm" :class="expandedSlot === type ? 'btn-active' : ''"
                     @click="toggleExpand(type)">เลือก</button>
                   <button v-if="pinned[type].length > 0" class="btn-sm btn-ghost"
-                    @click="pin(type, null)">ยกเลิก</button>
+                    style="margin-left: 6px" @click="pin(type, null)">ยกเลิก</button>
                 </td>
               </tr>
 
-              <tr v-if="expandedSlot === type" class="picker-tr">
-                <td colspan="5" class="picker-td">
-                  <div class="picker">
-                    <div class="picker-head">
-                      <span>
-                        เลือก {{ ENTITY_TYPE_LABELS[type] }}
-                        <span v-if="slotLimit(type) > 1" class="text-muted">
-                          (เลือกได้สูงสุด {{ slotLimit(type) }} ชิ้น)
-                        </span>
-                      </span>
-                      <button class="btn-sm btn-primary" @click="expandedSlot = null">ตกลง</button>
-                    </div>
-
-                    <div class="picker-opts">
-                      <div class="pick-row" :class="{ 'pick-active': pinned[type].length === 0 && !excluded[type] }"
-                        @click="selectAuto(type)">
-                        <span>ให้ระบบเลือกอัตโนมัติ</span>
-                        <span class="pick-check">{{ pinned[type].length === 0 && !excluded[type] ? '✓' : '' }}</span>
-                      </div>
-
-                     <div v-if="!REQUIRED_TYPES.includes(type)"
-                       class="pick-row pick-row-exclude" :class="{ 'pick-active': excluded[type] }"
-                        @click="selectExclude(type)">
-                        <span>ไม่ใช้ชิ้นส่วนนี้</span>
-                        <span class="pick-check">{{ excluded[type] ? '✓' : '' }}</span>
-                      </div>
-
-                      <div class="pick-divider"></div>
-
-                      <!-- รายการ entity -->
-                      <div v-for="entity in compatibleEntitiesFor(type)" :key="entity.id"
-                        class="pick-row"
-                        :class="{ 'pick-active': pinned[type].some((s) => s.entity.id === entity.id) }">
-                        <span class="pick-name" @click="selectPin(type, entity)">
-                          {{ entity.name }}
-                        </span>
-                        <div class="pick-right">
-                          <span class="pick-price">{{ fmt(slotTotal([{ entity, quantity: 1 }])) }}</span>
-                          <template v-if="pinned[type].some((s) => s.entity.id === entity.id)">
-                            <div class="qty-row">
-                              <button class="qty-btn" @click="adjustQty(type, entity.id, -1)">−</button>
-                              <span class="qty-num">{{ pinned[type].find((s) => s.entity.id === entity.id)?.quantity }}</span>
-                              <button class="qty-btn"
-                                :disabled="!canAddToSlot(type, entity)"
-                                @click="adjustQty(type, entity.id, 1)">+</button>
-                            </div>
-                          </template>
-                          <template v-else>
-                            <!-- BUG-01+02 fix: แสดง "แทนที่" เมื่อ slot เต็ม ไม่ใช่ disabled -->
-                            <button class="btn-sm"
-                              :class="canAddToSlot(type, entity) ? 'btn-primary' : 'btn-replace'"
-                              @click="selectPin(type, entity)">
-                              {{ canAddToSlot(type, entity) ? 'เลือก' : 'แทนที่' }}
-                            </button>
-                          </template>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
             </template>
           </tbody>
         </table>
@@ -326,6 +265,75 @@ const powerPct = computed(() => {
 
       </div>
     </div>
+
+    <!-- Lightbox picker -->
+    <Teleport to="body">
+      <Transition name="lb">
+        <div v-if="expandedSlot" class="lb-backdrop" @click.self="expandedSlot = null">
+          <div class="lb-modal" role="dialog">
+            <div class="lb-header">
+              <div class="lb-title">
+                เลือก {{ ENTITY_TYPE_LABELS[expandedSlot] }}
+                <span v-if="slotLimit(expandedSlot) > 1" class="lb-subtitle">
+                  (สูงสุด {{ slotLimit(expandedSlot) }} ชิ้น)
+                </span>
+              </div>
+              <button class="lb-close" @click="expandedSlot = null">✕</button>
+            </div>
+
+            <div class="lb-body">
+              <div class="pick-row"
+                :class="{ 'pick-active': pinned[expandedSlot].length === 0 && !excluded[expandedSlot] }"
+                @click="selectAuto(expandedSlot)">
+                <span>ให้ระบบเลือกอัตโนมัติ</span>
+                <span class="pick-check">{{ pinned[expandedSlot].length === 0 && !excluded[expandedSlot] ? '✓' : '' }}</span>
+              </div>
+
+              <div v-if="!REQUIRED_TYPES.includes(expandedSlot)"
+                class="pick-row pick-row-exclude"
+                :class="{ 'pick-active': excluded[expandedSlot] }"
+                @click="selectExclude(expandedSlot)">
+                <span>ไม่ใช้ชิ้นส่วนนี้</span>
+                <span class="pick-check">{{ excluded[expandedSlot] ? '✓' : '' }}</span>
+              </div>
+
+              <div class="pick-divider"></div>
+
+              <div v-for="entity in compatibleEntitiesFor(expandedSlot)" :key="entity.id"
+                class="pick-row"
+                :class="{ 'pick-active': pinned[expandedSlot].some((s) => s.entity.id === entity.id) }">
+                <span class="pick-name" @click="selectPin(expandedSlot, entity)">
+                  {{ entity.name }}
+                </span>
+                <div class="pick-right">
+                  <span class="pick-price">{{ fmt(slotTotal([{ entity, quantity: 1 }])) }}</span>
+                  <template v-if="pinned[expandedSlot].some((s) => s.entity.id === entity.id)">
+                    <div class="qty-row">
+                      <button class="qty-btn" @click="adjustQty(expandedSlot, entity.id, -1)">−</button>
+                      <span class="qty-num">{{ pinned[expandedSlot].find((s) => s.entity.id === entity.id)?.quantity }}</span>
+                      <button class="qty-btn"
+                        :disabled="!canAddToSlot(expandedSlot, entity)"
+                        @click="adjustQty(expandedSlot, entity.id, 1)">+</button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <button class="btn-sm"
+                      :class="canAddToSlot(expandedSlot, entity) ? 'btn-primary' : 'btn-replace'"
+                      @click="selectPin(expandedSlot, entity)">
+                      {{ canAddToSlot(expandedSlot, entity) ? 'เลือก' : 'แทนที่' }}
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <div class="lb-footer">
+              <button class="btn-sm btn-primary" @click="expandedSlot = null">ตกลง</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -366,7 +374,7 @@ html, body {
 .td-name { min-width: 160px; }
 .td-price { white-space: nowrap; color: #333; width: 90px; }
 .td-status { width: 70px; }
-.td-action { width: 110px; white-space: nowrap; }
+.td-action { width: 128px; white-space: nowrap; }
 
 .slot-item-row { display: flex; align-items: center; gap: 4px; }
 .qty-badge { font-size: 11px; background: #e0e8ff; color: #2255bb; padding: 1px 5px; border-radius: 10px; }
@@ -380,15 +388,40 @@ html, body {
 .text-ok  { color: #2a9d5c; }
 .text-err { color: #cc3333; }
 
-/* ─── Picker ─────────────────────────────────────── */
-.picker-tr td { padding: 0; }
-.picker-td { padding: 0 !important; }
-.picker { border: 1px solid #ddd; border-top: none; background: #fff; }
-.picker-head { display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 12px; background: #f0f0f0; border-bottom: 1px solid #ddd; }
-.picker-head span { font-size: 13px; font-weight: 500; }
-.picker-opts { padding: 6px; display: flex; flex-direction: column; gap: 2px;
-  max-height: 300px; overflow-y: auto; }
+/* ─── Lightbox ───────────────────────────────────── */
+.lb-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.lb-modal {
+  background: #fff; border-radius: 10px; width: 480px; max-width: 100%;
+  max-height: 80vh; display: flex; flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.22);
+}
+.lb-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid #e8e8e8; flex-shrink: 0;
+}
+.lb-title { font-size: 14px; font-weight: 600; display: flex; align-items: baseline; gap: 6px; }
+.lb-subtitle { font-size: 11px; font-weight: 400; color: #888; }
+.lb-close {
+  background: none; border: none; cursor: pointer; font-size: 16px;
+  color: #888; line-height: 1; padding: 2px 4px; border-radius: 3px;
+}
+.lb-close:hover { background: #f0f0f0; color: #333; }
+.lb-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.lb-footer {
+  padding: 10px 16px; border-top: 1px solid #e8e8e8; display: flex;
+  justify-content: flex-end; flex-shrink: 0;
+}
+
+/* Transition */
+.lb-enter-active, .lb-leave-active { transition: opacity 0.15s ease; }
+.lb-enter-active .lb-modal, .lb-leave-active .lb-modal { transition: transform 0.15s ease, opacity 0.15s ease; }
+.lb-enter-from, .lb-leave-to { opacity: 0; }
+.lb-enter-from .lb-modal, .lb-leave-to .lb-modal { transform: scale(0.95); opacity: 0; }
 .pick-row { display: flex; justify-content: space-between; align-items: center;
   padding: 8px 10px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; }
 .pick-row:hover { background: #f0f0f0; }

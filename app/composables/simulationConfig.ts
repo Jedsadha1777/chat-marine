@@ -1,47 +1,20 @@
 import type { EntityType } from '~/data/entities'
+import { TIER_RULES } from '~/composables/tierRules'
 
-// ══════════════════════════════════════════════════════════════════
-//  DOMAIN CONFIG
-//  แก้ไฟล์นี้เมื่อเปลี่ยน domain 
-// ══════════════════════════════════════════════════════════════════
+export { TIER_RULES }
 
-/**
- * ลำดับการ fill แต่ละ slot
- * กฎ: capacity container ต้องอยู่ท้ายสุดเสมอ
- *
- * ตัวอย่างอื่น:
- *   Server Rack : ['server', 'switch', 'patch_panel', 'ups']
- *   ระบบท่อน้ำ  : ['pump', 'valve', 'filter', 'tank']
- */
+// BOM display order — capacity container (psu) last
 export const FILL_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard', 'ram', 'psu']
 
-/**
- * จำนวน entity สูงสุดต่อ 1 slot type
- * ไม่ระบุ = ไม่จำกัด (Infinity)
- *
- * ตัวอย่างอื่น:
- *   Server Rack : { rack: 1, server: 10, switch: 4, ups: 2 }
- *   ระบบท่อน้ำ  : { pump: 3, valve: 10, filter: 2, tank: 1 }
- */
+// Hard max per slot type (undefined = unlimited)
 export const MAX_PER_TYPE: Partial<Record<EntityType, number>> = {
   gpu:         1,
   cpu:         1,
   motherboard: 1,
-  // ram: ไม่ใส่ที่นี่ — ดึงจาก DYNAMIC_MAX_PER_TYPE แทน
   psu:         1,
 }
 
-/**
- * Dynamic limit — ดึง max จาก attribute ของ entity อีกตัวใน simulation
- * ใช้สำหรับ limit ที่ขึ้นกับชิ้นส่วนอื่น เช่น ram_slots ของ MB
- *
- * source_type      : entity type ที่เป็นแหล่งข้อมูล
- * source_attribute : attribute ที่เป็นตัวกำหนด limit
- * fallback         : ค่า default ถ้าหา source entity ไม่เจอ
- *
- * ตัวอย่างอื่น:
- *   Server Rack: { server: { source_type: 'rack', source_attribute: 'total_u', fallback: 42 } }
- */
+// Dynamic limit sourced from another entity's attribute
 export const DYNAMIC_MAX_PER_TYPE: Partial<Record<EntityType, {
   source_type:        EntityType
   source_attribute:   string
@@ -56,142 +29,24 @@ export const DYNAMIC_MAX_PER_TYPE: Partial<Record<EntityType, {
   },
 }
 
-/**
- * โหมดการเลือก quantity เมื่อ suggestion engine fill slot ที่มีหลายชิ้น
- * ระบุเป็น global default หรือ override per-type ก็ได้
- *
- * 'unique' : เลือก entity ต่างกัน — เหมาะกับ component ที่แต่ละตัวทำหน้าที่ต่างกัน
- * 'stack'  : ซื้อ entity เดิมหลายชิ้น — เหมาะกับ RAM, storage, วัสดุ
- */
-export const QUANTITY_MODE: 'unique' | 'stack' = 'unique'
-
-/**
- * Override QUANTITY_MODE เฉพาะบาง type
- * ถ้าไม่ระบุ = ใช้ QUANTITY_MODE global
- *
- * RAM ต้องเป็น 'stack' เพราะควรซื้อยี่ห้อเดิมหลายชุด ไม่ใช่คนละยี่ห้อ
- */
-export const QUANTITY_MODE_PER_TYPE: Partial<Record<EntityType, 'unique' | 'stack'>> = {
-  ram: 'stack',
-}
-
-/**
- * กลยุทธ์การเลือก candidate
- *
- * 'highest_cost' : แพงสุด = best spec within budget (default)
- * 'lowest_cost'  : ถูกสุด = budget-conscious
- * 'best_fit'     : ใกล้ remaining budget มากสุด = ใช้งบเต็มที่สุด
- */
-export const SELECTION_STRATEGY: 'highest_cost' | 'lowest_cost' | 'best_fit' = 'highest_cost'
-
-/**
- * Rule ความโลภแยกต่างหาก — override SELECTION_STRATEGY เฉพาะบาง type
- *
- * ram: 'lowest_cost' — เลือก RAM ถูกสุดที่ compatible
- *   ให้งบเหลือสำหรับ GPU/CPU/MB ที่ greedy (highest_cost)
- * psu: 'lowest_cost' — เลือก PSU ถูกสุดที่ผ่าน power check
- *   ไม่ให้ PSU กินงบมากกว่าที่จำเป็น
- *
- * GPU/CPU/MB ไม่ระบุ → ใช้ SELECTION_STRATEGY global (highest_cost)
- */
-export const SELECTION_STRATEGY_PER_TYPE: Partial<Record<EntityType, 'highest_cost' | 'lowest_cost' | 'best_fit'>> = {
-  ram: 'lowest_cost',
-  psu: 'lowest_cost',
-}
-
-/**
- * สำรองงบขั้นต่ำให้แต่ละ type ก่อนที่ greedy fill จะเริ่ม
- * ป้องกัน type ต้นๆ ใน FILL_ORDER กวาดงบจนหมด ทำให้ type ท้ายๆ ไม่มีของ
- *
- * ระบุเป็น fraction ของ budget (0.0 – 1.0)
- * ผลรวมทุก type ควร <= 1.0  —  ไม่ระบุ = 0 (ไม่สำรอง)
- *
- * ตัวอย่างอื่น:
- *   Server Rack : { ups: 0.15, rack: 0.10 }  — สำรอง 15% สำหรับ UPS เสมอ
- */
-export const BUDGET_FLOOR_PER_TYPE: Partial<Record<EntityType, number>> = {
-  // psu: 0.08  ← uncomment เพื่อสำรอง 8% ของงบสำหรับ PSU เสมอ
-}
-
-/**
- * Hard minimum floor — ห้าม scale ลงต่ำกว่านี้ไม่ว่างบจะน้อยแค่ไหน
- * ระบุเป็นราคาจริง (absolute) ไม่ใช่ fraction
- *
- * ตัวอย่างอื่น:
- *   Server Rack : { ups: 5000 }  — สำรองอย่างน้อย 5,000 สำหรับ UPS เสมอ
- */
-export const HARD_FLOOR_MIN: Partial<Record<EntityType, number>> = {
-  psu: 3990,
-}
-
-/**
- * โหมดการกระจายจำนวนใน stack mode
- *
- * 'sequential' : เติม entity อันดับ 1 ให้เต็มก่อน แล้วค่อยไป 2, 3 (เดิม)
- * 'round_robin': วนแจกทีละ 1 ชิ้นต่อ entity ไปเรื่อยๆ จนเต็ม limit หรืองบหมด
- *
- * ตัวอย่างอื่น:
- *   สั่งซื้อวัสดุ  : 'round_robin'
- *   เติม storage   : 'sequential'
- */
-export const STACK_DISTRIBUTE_MODE: 'sequential' | 'round_robin' = 'sequential'
-
-/**
- * slot ที่ต้องผ่าน aggregate rules ก่อนเลือก (capacity containers)
- *
- * ตัวอย่างอื่น:
- *   Server Rack : ['ups']
- *   ระบบท่อน้ำ  : ['tank']
- */
+// Slots that need aggregate rule check (capacity containers)
 export const AGGREGATE_GUARD_TYPES: EntityType[] = ['psu', 'ram']
 
-/**
- * Rule codes สำหรับ aggregate detail ใน UI
- * primary : error rule  — exceed capacity
- * safety  : warning rule — ใกล้ exceed / null ถ้าไม่มี
- *
- * ตัวอย่างอื่น:
- *   Server Rack : { primary: 'AGG_RACK_POWER',  safety: 'AGG_RACK_POWER_SAFETY' }
- *   ระบบท่อน้ำ  : { primary: 'AGG_FLOW_RATE',   safety: null }
- */
+// Rule codes used for power-draw display in UI
 export const AGGREGATE_DISPLAY: { primary: string; safety: string | null } = {
   primary: 'AGG_POWER_CAPACITY',
   safety:  'AGG_POWER_SAFETY',
 }
 
-/**
- * ประเภทชิ้นส่วนที่ต้องมีในทุก simulation ที่ valid
- * ถ้า type ใดใน list นี้ไม่มีใน suggestion → isValid = false → BOM ไม่ถูก export
- *
- * ป้องกันกรณีที่ AGGREGATE_GUARD_TYPES กรอง capacity container ทุกตัวออก
- * (เช่น PSU ทุกตัวมี wattage ไม่พอรับ load รวม) แล้ว runAggregate คืน []
- * ทำให้ไม่มี error แต่ BOM กลับไม่มี PSU
- *
- * ตัวอย่างอื่น:
- *   Server Rack : ['rack', 'ups']
- *   ระบบท่อน้ำ  : ['pump', 'tank']
- */
+// Types required in every valid build
 export const REQUIRED_TYPES: EntityType[] = ['cpu', 'motherboard', 'ram', 'psu']
 
-/**
- * Rule ความโลภแยกต่างหาก — ลำดับ type ที่ upgradePass พยายาม upgrade
- *
- * หลัง greedy fill + repair: ถ้า RAM qty > 1 และ trade 1 kit → ได้ GPU/CPU/MB ดีกว่า
- * → trade! ไม่ต้องเก็บ RAM คิตที่ 2 ไว้โดยไม่จำเป็น
- *
- * ลำดับ: GPU ก่อน (priority สูงสุด) → CPU → MB
- */
-export const UPGRADE_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard']
+// Engine selection priority (non-GPU components). Order = budget allocation priority.
+// RAM first → maximize capacity; then CPU quality; then MB quality; PSU always cheapest adequate.
+export const SELECTION_ORDER: EntityType[] = ['ram', 'cpu', 'motherboard', 'psu']
 
-/**
- * attribute key ที่ใช้เป็นราคาของ entity
- *
- * ตัวอย่างอื่น: 'price' | 'cost_thb'
- */
+// PSU safety factor — total draw must not exceed this fraction of PSU wattage
+export const PSU_SAFETY_FACTOR = 0.8
+
 export const COST_ATTRIBUTE = 'unit_cost'
-
-/**
- * จำนวนทศนิยมสำหรับราคา
- * 0 = จำนวนเต็ม (บาท), 2 = USD, 4 = crypto
- */
 export const COST_PRECISION = 0

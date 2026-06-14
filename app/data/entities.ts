@@ -13,7 +13,7 @@ export const ENTITIES: Entity[] = [
     attributes: {
       socket:            'LGA1700',
       ram_type:          'DDR5',
-      ram_slots:         2,
+      ram_slots:         4,
       max_ram_gb:        96,
       max_ram_speed_mhz: 6800,
       tdp_support_w:     125,
@@ -71,7 +71,8 @@ export const ENTITIES: Entity[] = [
     attributes: {
       socket:         'LGA1700',
       cores:          14,
-      tdp_w:          181,   // Max Turbo Power (PL2) — Base TDP คือ 125W
+      l3_cache_mb:    24,
+      tdp_w:          181,
       pcie_version:   '5.0',
       integrated_gpu: false,
       unit_cost:      9490,
@@ -87,7 +88,8 @@ export const ENTITIES: Entity[] = [
     attributes: {
       socket:         'LGA1700',
       cores:          24,
-      tdp_w:          253,   // Max Turbo Power (PL2)
+      l3_cache_mb:    36,
+      tdp_w:          253,
       pcie_version:   '5.0',
       integrated_gpu: false,
       unit_cost:      22990,
@@ -103,7 +105,8 @@ export const ENTITIES: Entity[] = [
     attributes: {
       socket:         'AM4',
       cores:          8,
-      tdp_w:          142,   // Max Turbo Power (PPT) — Base TDP คือ 105W
+      l3_cache_mb:    32,
+      tdp_w:          142,
       pcie_version:   '4.0',
       integrated_gpu: false,
       unit_cost:      7490,
@@ -167,9 +170,11 @@ export const ENTITIES: Entity[] = [
     name: 'NVIDIA GeForce RTX 4070',
     status: 'published',
     attributes: {
-      power_draw_w: 200,   // TBP
-      pcie_version: '4.0',
-      unit_cost:    19990,
+      memory_bus_bit: 192,
+      vram_gb:        12,
+      power_draw_w:   200,
+      pcie_version:   '4.0',
+      unit_cost:      19990,
     },
   },
   {
@@ -180,9 +185,11 @@ export const ENTITIES: Entity[] = [
     name: 'NVIDIA GeForce RTX 4090',
     status: 'published',
     attributes: {
-      power_draw_w: 450,   // TBP
-      pcie_version: '4.0',
-      unit_cost:    59990,
+      memory_bus_bit: 384,
+      vram_gb:        24,
+      power_draw_w:   450,
+      pcie_version:   '4.0',
+      unit_cost:      59990,
     },
   },
   {
@@ -193,9 +200,11 @@ export const ENTITIES: Entity[] = [
     name: 'AMD Radeon RX 7800 XT',
     status: 'published',
     attributes: {
-      power_draw_w: 263,   // TBP
-      pcie_version: '4.0',
-      unit_cost:    14990,
+      memory_bus_bit: 256,
+      vram_gb:        16,
+      power_draw_w:   263,
+      pcie_version:   '4.0',
+      unit_cost:      14990,
     },
   },
 
