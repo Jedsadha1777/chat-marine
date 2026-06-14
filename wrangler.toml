@@ -1,0 +1,14 @@
+name = "chat-marine"
+compatibility_date = "2026-06-14"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chat-marine"
+database_id = "02bc8605-b4fb-4a90-b3c0-8464d72fe1ae"
+
+[vars]
+ENVIRONMENT = "production"
+
+[dev]
+port = 8788
