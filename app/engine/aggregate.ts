@@ -59,7 +59,6 @@ function resolveCapacity(
 
   switch (cfg.mode) {
     case 'entity_attribute': {
-      // BUG-1 fix: คูณ quantity เพื่อรองรับ capacity container มากกว่า 1 ตัว (เช่น 2 UPS)
       const matching = items.filter((i) => i.entity.entity_type === cfg.entity_type)
       if (matching.length === 0) return null
       const values = matching

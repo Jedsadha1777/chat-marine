@@ -1,7 +1,4 @@
 import type { EntityType } from '~/data/entities'
-import { TIER_RULES } from '~/composables/tierRules'
-
-export { TIER_RULES }
 
 // BOM display order — capacity container (psu) last
 export const FILL_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard', 'ram', 'psu']

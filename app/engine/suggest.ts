@@ -51,7 +51,6 @@ export interface SuggestInput {
 export interface SuggestResult {
   slots: Record<string, SlotItem[]>
   overflow: boolean
-  repairedBlockedIds: number[]
 }
 
 export function unitCost(e: Entity, cfg: DomainConfig): number {
@@ -423,7 +422,7 @@ export function buildSuggestion(
     blockedIds,
   })
 
-  return { slots, overflow: false, repairedBlockedIds: [] }
+  return { slots, overflow: false }
 }
 
 export function validateItems(

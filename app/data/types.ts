@@ -101,7 +101,6 @@ export interface SimulationItem {
   id: number
   entity: Entity
   quantity: number
-  slot_key?: string
 }
 
 export interface ValidationIssue {

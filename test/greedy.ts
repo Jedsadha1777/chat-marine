@@ -1,14 +1,11 @@
 /**
- * Spec-chain engine tests — TDD for 3D spec-chain fill
+ * Spec-chain engine tests — generic backtracking fill
  *
  * Engine behavior:
- *   GPU: iterate highest→lowest; for each find minimum adequate package
- *   CPU: cheapest that passes pairwise + satisfies tier rules for the GPU
- *   MB:  cheapest compatible with CPU (socket)
- *   RAM: cheapest compatible with MB (ram_type)
+ *   GPU: iterate highest→lowest cost; for each, run backtrackFill for remaining types
+ *   selectionOrder (RAM→CPU→MB→PSU): each type tried highest-cost first
+ *   Tier rules are SOFT PREFERENCES: tier-satisfying candidates sorted before others
  *   PSU: cheapest adequate for total power draw (÷ psuSafetyFactor)
- *
- * Key property: GPU is selected by max-affordable tier, not by greedy budget fill.
  */
 
 import { ENTITIES, ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entities'
@@ -19,8 +16,9 @@ import { DEFAULT_DOMAIN_CONFIG } from '~/composables/domainConfig'
 import {
   FILL_ORDER, MAX_PER_TYPE, DYNAMIC_MAX_PER_TYPE,
   AGGREGATE_GUARD_TYPES, AGGREGATE_DISPLAY, REQUIRED_TYPES,
-  COST_ATTRIBUTE, COST_PRECISION, PSU_SAFETY_FACTOR, TIER_RULES, SELECTION_ORDER,
+  COST_ATTRIBUTE, COST_PRECISION, PSU_SAFETY_FACTOR, SELECTION_ORDER,
 } from '~/composables/simulationConfig'
+import { TIER_RULES } from '~/composables/tierRules'
 
 // ── test harness ─────────────────────────────────────────────────────────────
 
