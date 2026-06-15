@@ -98,11 +98,12 @@ function adjustQty(type: EntityType, entityId: number, delta: number) {
   }
 }
 
-const budgetInput = ref<string>('')
+const DEFAULT_BUDGET = 30000
+const budgetInput = ref<string>(String(DEFAULT_BUDGET))
 watch(budgetInput, (val) => {
   const n = Number(val)
   budget.value = val === '' || isNaN(n) ? null : n
-})
+}, { immediate: true })
 
 const PRESETS = [15000, 20000, 30000, 50000, 80000]
 function setPreset(p: number) { budgetInput.value = String(p) }
