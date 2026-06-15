@@ -76,11 +76,14 @@ export function useSimulation() {
   )
 
   // ── Picker: compatible entities ────────────────────────────────────────────
-  // Calls /api/compatible with current context entities — server filters by D1
+  // Calls /api/compatible with current context entities — server filters by D1.
+  // Only PINNED items constrain the picker, not auto-suggested ones.
+  // This lets user switch CPU from Intel→AMD even when the engine auto-picked
+  // an Intel MB — the engine will replace the MB automatically after selection.
   async function compatibleEntitiesFor(type: EntityType): Promise<Entity[]> {
     const currentEntityIds = ENTITY_TYPES
       .filter((t) => t !== type && !excluded[t])
-      .flatMap((t) => (pinned[t].length > 0 ? pinned[t] : suggestion.value[t]).map((s) => s.entity.id))
+      .flatMap((t) => pinned[t].map((s) => s.entity.id))
       .filter((id) => id != null)
 
     return $fetch<Entity[]>('/api/compatible', {
