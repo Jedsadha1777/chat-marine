@@ -205,10 +205,20 @@ function backtrackFill(
   )
   const satisfiesTier = (e: Entity): boolean =>
     tierConds.every((c: Record<string, unknown>) => evalLogic(c, { attributes: e.attributes }))
-  const byDescCost = (a: Entity, b: Entity): number => unitCost(b, cfg) - unitCost(a, cfg)
+  // If this type has a capacity_attribute (e.g. RAM modules), prefer higher-capacity
+  // units first so kits (modules=2) are tried before individual sticks (modules=1).
+  // Within the same module count, sort by descending unit cost as usual.
+  const capAttrKey = cfg.dynamicMaxPerType[type]?.capacity_attribute
+  const byPreference = (a: Entity, b: Entity): number => {
+    if (capAttrKey) {
+      const diff = Number(b.attributes[capAttrKey] ?? 1) - Number(a.attributes[capAttrKey] ?? 1)
+      if (diff !== 0) return diff
+    }
+    return unitCost(b, cfg) - unitCost(a, cfg)
+  }
   const candidates = [
-    ...pairwiseOk.filter(satisfiesTier).sort(byDescCost),
-    ...pairwiseOk.filter((e) => !satisfiesTier(e)).sort(byDescCost),
+    ...pairwiseOk.filter(satisfiesTier).sort(byPreference),
+    ...pairwiseOk.filter((e) => !satisfiesTier(e)).sort(byPreference),
   ]
 
   for (const candidate of candidates) {
