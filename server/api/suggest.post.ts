@@ -38,14 +38,23 @@ export default defineEventHandler(async (event) => {
     })).filter((s) => s.entity != null)
   }
 
-  // Fetch top-50 candidates per type — 5 D1 queries in parallel
-  // 5 types × 50 rows = 250 reads per request (well within 5M/day free limit)
-  // Anchor type (gpu) needs diverse price tiers so the engine can backtrack
-  // from expensive GPUs to mid-range when budget doesn't cover the full build.
+  // Fetch top-20 candidates per type — 5 D1 queries in parallel
+  // 5 types × 20 rows = 100 reads per request; 100 JSON.parse calls ≈ 3ms CPU
+  // — stays safely under Cloudflare Workers free-tier 10ms CPU limit.
+  //
+  // Each type gets a budget proportional to its typical weight so that the
+  // top-20 candidates cover an affordable price range for the total budget.
+  // Without this, on a ฿50K budget all 20 GPU candidates are ฿23K+ and the
+  // engine can't build a full set (GPU + expensive CPU + MB + RAM > budget).
+  const TYPE_RATIO: Record<string, number> = {
+    gpu: 0.40, cpu: 0.20, motherboard: 0.15, ram: 0.15, psu: 0.10,
+  }
   const results = await Promise.all(
     ENTITY_TYPES.map((type) => {
       if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return Promise.resolve([] as Entity[])
-      return fetchCandidates(DB, type, maxCost, blockedIds, 50)
+      const ratio = budget !== null ? (TYPE_RATIO[type] ?? 0.20) : 1
+      const typeBudget = Math.round(maxCost * ratio)
+      return fetchCandidates(DB, type, typeBudget, blockedIds, 20)
     })
   )
   const candidates: Entity[] = [
