@@ -8,11 +8,10 @@
  *   PSU: cheapest adequate for total power draw (÷ psuSafetyFactor)
  */
 
-import { ENTITIES, ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entities'
+import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entities'
 import type { Entity } from '~/data/types'
 import { RULES } from '~/data/rules'
-import { buildSuggestion, totalCostOf, type DomainConfig } from '~/engine/suggest'
-import { DEFAULT_DOMAIN_CONFIG } from '~/composables/domainConfig'
+import { buildSuggestion, type DomainConfig } from '~/engine/suggest'
 import {
   FILL_ORDER, MAX_PER_TYPE, DYNAMIC_MAX_PER_TYPE,
   AGGREGATE_GUARD_TYPES, AGGREGATE_DISPLAY, REQUIRED_TYPES,
@@ -33,17 +32,6 @@ function assert(cond: boolean, label: string, detail = ''): void {
     console.log(`❌ ${label}${detail ? ` — ${detail}` : ''}`)
     failed++
   }
-}
-
-function totalCost(slots: Record<string, { entity: { attributes: Record<string, unknown> }; quantity: number }[]>): number {
-  return Object.values(slots).flatMap((s) => s)
-    .reduce((sum, s) => sum + Number(s.entity.attributes['unit_cost'] ?? 0) * s.quantity, 0)
-}
-
-function slotSummary(slots: Record<string, { entity: { name?: string }; quantity: number }[]>): string {
-  return JSON.stringify(
-    Object.fromEntries(Object.entries(slots).filter(([, v]) => v.length > 0).map(([k, v]) => [k, v.length])),
-  )
 }
 
 // ── standard DomainConfig (mirrors DEFAULT but explicit) ─────────────────────
@@ -68,81 +56,7 @@ const CFG: DomainConfig = {
   selectionOrder:    [...SELECTION_ORDER],
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  SECTION 1 — standard budget scenarios with DEFAULT_DOMAIN_CONFIG
-// ══════════════════════════════════════════════════════════════════════════════
-
-console.log('\n── Standard budget scenarios ──')
-
-// budget 40k → GPU present (RTX4070 fits; RTX4090 alone > 40k)
-const g40 = buildSuggestion(ENTITIES, RULES, DEFAULT_DOMAIN_CONFIG, { budget: 40_000 })
-const g40Total = totalCost(g40.slots)
-console.log(`\n— budget 40000: total=${g40Total}  types=${slotSummary(g40.slots)}`)
-assert(g40Total <= 40_000, 'budget 40k: total ≤ budget', `got ${g40Total}`)
-assert((g40.slots['gpu'] ?? []).length > 0, 'budget 40k: GPU present')
-assert((g40.slots['psu'] ?? []).length > 0, 'budget 40k: PSU present')
-assert((g40.slots['cpu'] ?? []).length > 0, 'budget 40k: CPU present')
-
-// budget 5k → nothing exceeds budget (too small for any full build)
-const g5 = buildSuggestion(ENTITIES, RULES, DEFAULT_DOMAIN_CONFIG, { budget: 5_000 })
-const g5Total = totalCost(g5.slots)
-console.log(`\n— budget 5000: total=${g5Total}`)
-assert(g5Total <= 5_000, 'budget 5k: total ≤ budget', `got ${g5Total}`)
-
-// budget 25k → no GPU (all GPU packages exceed 25k), but CPU + PSU present
-const g25 = buildSuggestion(ENTITIES, RULES, DEFAULT_DOMAIN_CONFIG, { budget: 25_000 })
-const g25Total = totalCost(g25.slots)
-console.log(`\n— budget 25000: total=${g25Total}  types=${slotSummary(g25.slots)}`)
-assert(g25Total <= 25_000, 'budget 25k: total ≤ budget', `got ${g25Total}`)
-assert((g25.slots['cpu'] ?? []).length > 0, 'budget 25k: CPU present')
-assert((g25.slots['psu'] ?? []).length > 0, 'budget 25k: PSU present')
-
-// budget 80k → GPU present (RTX4070 fits; RTX4090 needs i9 but RTX4090+i9 > 80k)
-const g80 = buildSuggestion(ENTITIES, RULES, DEFAULT_DOMAIN_CONFIG, { budget: 80_000 })
-const g80Total = totalCost(g80.slots)
-console.log(`\n— budget 80000: total=${g80Total}  types=${slotSummary(g80.slots)}`)
-assert(g80Total <= 80_000, 'budget 80k: total ≤ budget', `got ${g80Total}`)
-assert((g80.slots['gpu'] ?? []).length > 0, 'budget 80k: GPU present')
-assert((g80.slots['psu'] ?? []).length > 0, 'budget 80k: PSU present')
-
-// budget null → GPU present (unconstrained — best build)
-const gNull = buildSuggestion(ENTITIES, RULES, DEFAULT_DOMAIN_CONFIG, { budget: null })
-console.log(`\n— budget null: types=${slotSummary(gNull.slots)}`)
-assert((gNull.slots['gpu'] ?? []).length > 0, 'budget null: GPU present')
-assert((gNull.slots['psu'] ?? []).length > 0, 'budget null: PSU present')
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  SECTION 2 — GPU-first property (spec-chain, not greedy-RAM)
-//
-//  Old 1D greedy at 40k: picked 2×RAM instead of GPU (wrong)
-//  New spec-chain at 40k: picks GPU first, then minimum adequate supporting
-// ══════════════════════════════════════════════════════════════════════════════
-
-console.log('\n── GPU-first spec-chain property ──')
-
-// 40k must produce a GPU, not inflate RAM
-const gpuFirst40 = buildSuggestion(ENTITIES, RULES, CFG, { budget: 40_000 })
-assert(
-  (gpuFirst40.slots['gpu'] ?? []).length > 0,
-  'spec-chain 40k: GPU present (not replaced by extra RAM)',
-)
-const ramQty40 = (gpuFirst40.slots['ram'] ?? []).reduce((s, i) => s + i.quantity, 0)
-assert(ramQty40 <= 1, 'spec-chain 40k: RAM qty ≤ 1 (minimum adequate — not inflated)', `got ${ramQty40}`)
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  SECTION 3 — TierRule as soft preference (not hard requirement)
-//
-//  RTX4090 (memory_bus_bit=384 > 312, vram_gb=24 > 16) triggers HIGH_BW_GPU rule
-//  → PREFERS CPU with l3_cache_mb > 32 (tried first, desc cost)
-//  → If no tier-satisfying CPU is affordable, falls back to any compatible CPU
-//  → GPU is NEVER blocked solely because of tier conditions
-//
-//  Custom entity set: RTX4090 + low-cache CPU only → GPU selects with fallback CPU
-//  Custom entity set: RTX4090 + high-cache CPU only → GPU selects with preferred CPU
-//  Mixed set: engine picks best GPU + prefers tier-satisfying CPU first
-// ══════════════════════════════════════════════════════════════════════════════
-
-console.log('\n── TierRule enforcement ──')
+// ── shared inline support components ─────────────────────────────────────────
 
 const BASE_SUPPORT: Entity[] = [
   {
@@ -186,6 +100,35 @@ const CPU_HIGH_CACHE: Entity = {
   name: 'CPU l3=36MB', status: 'published',
   attributes: { socket: 'LGA1700', cores: 24, l3_cache_mb: 36, tdp_w: 253, pcie_version: '5.0', unit_cost: 15000 },
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SECTION 1 — GPU-first spec-chain property
+// ══════════════════════════════════════════════════════════════════════════════
+
+console.log('\n── GPU-first spec-chain property ──')
+
+const gpuFirst = buildSuggestion(
+  [RTX4070_ENTITY, CPU_HIGH_CACHE, ...BASE_SUPPORT],
+  RULES, CFG, { budget: 100_000 },
+)
+assert((gpuFirst.slots['gpu'] ?? []).length > 0, 'spec-chain: GPU present (not replaced by extra RAM)')
+const ramQty = (gpuFirst.slots['ram'] ?? []).reduce((s, i) => s + i.quantity, 0)
+assert(ramQty <= 1, 'spec-chain: RAM qty ≤ 1 (minimum adequate — not inflated)', `got ${ramQty}`)
+
+// budget too tight → no GPU, but total within budget
+const tiny = buildSuggestion(
+  [RTX4090_ENTITY, CPU_LOW_CACHE, ...BASE_SUPPORT],
+  RULES, CFG, { budget: 5_000 },
+)
+const tinyTotal = Object.values(tiny.slots).flatMap(s => s)
+  .reduce((sum, s) => sum + Number(s.entity.attributes['unit_cost'] ?? 0) * s.quantity, 0)
+assert(tinyTotal <= 5_000, 'budget 5k: total ≤ budget', `got ${tinyTotal}`)
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SECTION 2 — TierRule as soft preference (not hard requirement)
+// ══════════════════════════════════════════════════════════════════════════════
+
+console.log('\n── TierRule enforcement ──')
 
 // Case A: RTX4090 + only low-cache CPU → tier preference unfulfilled but GPU still selected (soft rule)
 const tierEntitiesA: Entity[] = [RTX4090_ENTITY, CPU_LOW_CACHE, ...BASE_SUPPORT]

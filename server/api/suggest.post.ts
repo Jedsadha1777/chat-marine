@@ -38,12 +38,14 @@ export default defineEventHandler(async (event) => {
     })).filter((s) => s.entity != null)
   }
 
-  // Fetch top-15 candidates per type — 5 D1 queries in parallel
-  // 5 types × 15 rows = 75 rows per request (well within 5M/day free limit)
+  // Fetch top-50 candidates per type — 5 D1 queries in parallel
+  // 5 types × 50 rows = 250 reads per request (well within 5M/day free limit)
+  // Anchor type (gpu) needs diverse price tiers so the engine can backtrack
+  // from expensive GPUs to mid-range when budget doesn't cover the full build.
   const results = await Promise.all(
     ENTITY_TYPES.map((type) => {
       if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return Promise.resolve([] as Entity[])
-      return fetchCandidates(DB, type, maxCost, blockedIds, 15)
+      return fetchCandidates(DB, type, maxCost, blockedIds, 50)
     })
   )
   const candidates: Entity[] = [
