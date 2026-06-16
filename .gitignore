@@ -25,3 +25,4 @@ logs
 
 # Wrangler local state
 .wrangler
+apply_remote.py
