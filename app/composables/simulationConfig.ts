@@ -1,7 +1,7 @@
 import type { EntityType } from '~/data/entities'
 
-// BOM display order — capacity container (psu) before optional SSD
-export const FILL_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard', 'ram', 'psu', 'ssd']
+// BOM display order — SSD shown above PSU
+export const FILL_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard', 'ram', 'ssd', 'psu']
 
 // Hard max per slot type (undefined = unlimited)
 export const MAX_PER_TYPE: Partial<Record<EntityType, number>> = {

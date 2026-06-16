@@ -285,9 +285,6 @@ function tryFillPackage(
 
   if (chosen === null) return null
 
-  // Post-backtrack slot fill: use dynamicMaxPerType to fill remaining capacity slots.
-  // After backtrack picks 1 unit, try adding more if the source entity has spare slots and budget allows.
-  // Capacity entity is re-evaluated if extra load exceeds current capacity.
   const quantities: Record<string, number> = {}
   const spentInBacktrack = Object.entries(chosen)
     .filter(([t]) => toFill.has(t))
@@ -296,6 +293,36 @@ function tryFillPackage(
 
   const capAttr = cfg.capacityAttribute ?? 'watt_output'
 
+  // Post-fill optional types (e.g. SSD) BEFORE RAM x2 expansion so SSD gets first pick of budget.
+  // Candidates sorted by preferAttribute DESC → biggest affordable wins.
+  const postFilled: Record<string, SlotItem[]> = {}
+  if (cfg.postFillTypes?.length) {
+    const allCtx = [...context, ...anchorCtx, ...Object.values(chosen)]
+      .filter((e, i, arr) => arr.indexOf(e) === i)
+    for (const { type, preferAttribute } of cfg.postFillTypes) {
+      if (!toFill.has(type)) continue
+      const postCandidates = available
+        .filter((e) => e.entity_type === type && cachedPairwise(e, allCtx, rules))
+        .sort((a, b) => {
+          if (preferAttribute) {
+            const diff = Number(b.attributes[preferAttribute] ?? 0) - Number(a.attributes[preferAttribute] ?? 0)
+            if (diff !== 0) return diff
+          }
+          return unitCost(b, cfg) - unitCost(a, cfg)
+        })
+      for (const candidate of postCandidates) {
+        if (unitCost(candidate, cfg) <= remaining) {
+          postFilled[type] = [{ entity: candidate, quantity: 1 }]
+          remaining -= unitCost(candidate, cfg)
+          break
+        }
+      }
+    }
+  }
+
+  // Post-backtrack slot fill: use dynamicMaxPerType to fill remaining capacity slots.
+  // After backtrack picks 1 unit, try adding more if the source entity has spare slots and budget allows.
+  // Capacity entity is re-evaluated if extra load exceeds current capacity.
   for (const [type, dynCfg] of Object.entries(cfg.dynamicMaxPerType) as [string, DynamicMaxCfg][]) {
     if (!dynCfg || !toFill.has(type) || !chosen[type]) continue
 
@@ -353,32 +380,7 @@ function tryFillPackage(
     if (!toFill.has(type)) continue
     pkg[type] = [{ entity, quantity: quantities[type] ?? 1 }]
   }
-
-  // Post-fill optional types (e.g. SSD) using remaining budget after full package.
-  // Candidates sorted by preferAttribute DESC → biggest affordable wins.
-  if (cfg.postFillTypes?.length) {
-    const allCtx = [...context, ...anchorCtx, ...Object.values(chosen)]
-      .filter((e, i, arr) => arr.indexOf(e) === i)
-    for (const { type, preferAttribute } of cfg.postFillTypes) {
-      if (!toFill.has(type) || pkg[type]) continue
-      const postCandidates = available
-        .filter((e) => e.entity_type === type && cachedPairwise(e, allCtx, rules))
-        .sort((a, b) => {
-          if (preferAttribute) {
-            const diff = Number(b.attributes[preferAttribute] ?? 0) - Number(a.attributes[preferAttribute] ?? 0)
-            if (diff !== 0) return diff
-          }
-          return unitCost(b, cfg) - unitCost(a, cfg)
-        })
-      for (const candidate of postCandidates) {
-        if (unitCost(candidate, cfg) <= remaining) {
-          pkg[type] = [{ entity: candidate, quantity: 1 }]
-          remaining -= unitCost(candidate, cfg)
-          break
-        }
-      }
-    }
-  }
+  Object.assign(pkg, postFilled)
 
   return pkg
 }
