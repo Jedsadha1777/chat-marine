@@ -28,9 +28,17 @@ export const DYNAMIC_MAX_PER_TYPE: Partial<Record<EntityType, {
 }
 
 // Post-fill types: filled after main package (anchor+core) using remaining budget.
-// Sorted by preferAttribute DESC so biggest-affordable wins.
-export const POST_FILL_TYPES: Array<{ type: EntityType; preferAttribute: string }> = [
-  { type: 'ssd', preferAttribute: 'capacity_gb' },
+// Phase 1 (no upgradeExisting): runs BEFORE RAM x2 — guarantees at least 1 SSD.
+// Phase 3 (upgradeExisting: true): runs AFTER RAM x2 — upgrades only if budget remains.
+export const POST_FILL_TYPES: Array<{
+  type: EntityType
+  preferAttribute: string
+  maxAttrValue?: number
+  minAttrValue?: number
+  upgradeExisting?: boolean
+}> = [
+  { type: 'ssd', preferAttribute: 'capacity_gb', maxAttrValue: 512 },
+  { type: 'ssd', preferAttribute: 'capacity_gb', minAttrValue: 1000, upgradeExisting: true },
 ]
 
 // Slots that need aggregate rule check (capacity containers)

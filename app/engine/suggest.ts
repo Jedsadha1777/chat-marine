@@ -19,6 +19,9 @@ export interface DynamicMaxCfg {
 export interface PostFillCfg {
   type: string
   preferAttribute?: string
+  maxAttrValue?: number      // cap: only candidates where preferAttribute <= this
+  minAttrValue?: number      // floor: only candidates where preferAttribute >= this
+  upgradeExisting?: boolean  // phase 3: runs after quantities, replaces prior pick if upgrade affordable
 }
 
 export interface DomainConfig {
@@ -293,29 +296,36 @@ function tryFillPackage(
 
   const capAttr = cfg.capacityAttribute ?? 'watt_output'
 
-  // Post-fill optional types (e.g. SSD) BEFORE RAM x2 expansion so SSD gets first pick of budget.
-  // Candidates sorted by preferAttribute DESC → biggest affordable wins.
+  // Phase 1 post-fill: optional types (SSD ≤512GB) BEFORE RAM x2 — guarantees at least 1 SSD.
+  // Sorted DESC by preferAttribute → biggest-within-cap wins; fallback to smaller if budget tight.
   const postFilled: Record<string, SlotItem[]> = {}
-  if (cfg.postFillTypes?.length) {
-    const allCtx = [...context, ...anchorCtx, ...Object.values(chosen)]
-      .filter((e, i, arr) => arr.indexOf(e) === i)
-    for (const { type, preferAttribute } of cfg.postFillTypes) {
-      if (!toFill.has(type)) continue
-      const postCandidates = available
-        .filter((e) => e.entity_type === type && cachedPairwise(e, allCtx, rules))
-        .sort((a, b) => {
-          if (preferAttribute) {
-            const diff = Number(b.attributes[preferAttribute] ?? 0) - Number(a.attributes[preferAttribute] ?? 0)
-            if (diff !== 0) return diff
-          }
-          return unitCost(b, cfg) - unitCost(a, cfg)
-        })
-      for (const candidate of postCandidates) {
-        if (unitCost(candidate, cfg) <= remaining) {
-          postFilled[type] = [{ entity: candidate, quantity: 1 }]
-          remaining -= unitCost(candidate, cfg)
-          break
+  const allCtxForPost = [...context, ...anchorCtx, ...Object.values(chosen)]
+    .filter((e, i, arr) => arr.indexOf(e) === i)
+  for (const { type, preferAttribute, maxAttrValue, minAttrValue, upgradeExisting } of cfg.postFillTypes ?? []) {
+    if (upgradeExisting) continue  // phase 3 runs later
+    if (!toFill.has(type)) continue
+    const postCandidates = available
+      .filter((e) => {
+        if (e.entity_type !== type || !cachedPairwise(e, allCtxForPost, rules)) return false
+        if (preferAttribute) {
+          const v = Number(e.attributes[preferAttribute] ?? 0)
+          if (maxAttrValue !== undefined && v > maxAttrValue) return false
+          if (minAttrValue !== undefined && v < minAttrValue) return false
         }
+        return true
+      })
+      .sort((a, b) => {
+        if (preferAttribute) {
+          const diff = Number(b.attributes[preferAttribute] ?? 0) - Number(a.attributes[preferAttribute] ?? 0)
+          if (diff !== 0) return diff
+        }
+        return unitCost(b, cfg) - unitCost(a, cfg)
+      })
+    for (const candidate of postCandidates) {
+      if (unitCost(candidate, cfg) <= remaining) {
+        postFilled[type] = [{ entity: candidate, quantity: 1 }]
+        remaining -= unitCost(candidate, cfg)
+        break
       }
     }
   }
@@ -369,6 +379,41 @@ function tryFillPackage(
           quantities[type] = 1 + extra
           break
         }
+      }
+    }
+  }
+
+  // Phase 3 post-fill: upgrade pass (SSD ≥1TB) AFTER RAM x2 — RAM gets budget priority.
+  // Sorted ASC by preferAttribute → smallest step-up wins (1TB before 2TB).
+  // If type was already picked in phase 1, only pay the cost difference.
+  for (const { type, preferAttribute, maxAttrValue, minAttrValue, upgradeExisting } of cfg.postFillTypes ?? []) {
+    if (!upgradeExisting) continue
+    if (!toFill.has(type)) continue
+    const existing = postFilled[type]?.[0]?.entity ?? null
+    const existingCost = existing ? unitCost(existing, cfg) : 0
+    const upgradeCandidates = available
+      .filter((e) => {
+        if (e.entity_type !== type || !cachedPairwise(e, allCtxForPost, rules)) return false
+        if (preferAttribute) {
+          const v = Number(e.attributes[preferAttribute] ?? 0)
+          if (maxAttrValue !== undefined && v > maxAttrValue) return false
+          if (minAttrValue !== undefined && v < minAttrValue) return false
+        }
+        return true
+      })
+      .sort((a, b) => {
+        if (preferAttribute) {
+          const diff = Number(a.attributes[preferAttribute] ?? 0) - Number(b.attributes[preferAttribute] ?? 0)
+          if (diff !== 0) return diff  // ASC: smallest upgrade first
+        }
+        return unitCost(a, cfg) - unitCost(b, cfg)
+      })
+    for (const candidate of upgradeCandidates) {
+      const upgradeCost = unitCost(candidate, cfg) - existingCost
+      if (upgradeCost <= remaining) {
+        postFilled[type] = [{ entity: candidate, quantity: 1 }]
+        remaining -= upgradeCost
+        break
       }
     }
   }
