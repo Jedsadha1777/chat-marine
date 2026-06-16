@@ -47,7 +47,7 @@ export default defineEventHandler(async (event) => {
   // Without this, on a ฿50K budget all 20 GPU candidates are ฿23K+ and the
   // engine can't build a full set (GPU + expensive CPU + MB + RAM > budget).
   const TYPE_RATIO: Record<string, number> = {
-    gpu: 0.40, cpu: 0.20, motherboard: 0.15, ram: 0.15, psu: 0.10,
+    gpu: 0.40, cpu: 0.20, motherboard: 0.15, ram: 0.15, psu: 0.10, ssd: 0.12,
   }
   const results = await Promise.all(
     ENTITY_TYPES.map((type) => {

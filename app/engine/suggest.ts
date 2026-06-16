@@ -16,6 +16,11 @@ export interface DynamicMaxCfg {
   fallback: number
 }
 
+export interface PostFillCfg {
+  type: string
+  preferAttribute?: string
+}
+
 export interface DomainConfig {
   fillOrder: string[]
   entityTypes: string[]
@@ -40,6 +45,8 @@ export interface DomainConfig {
   loadAttributes?: string[]
   // Total load must not exceed this fraction of capacity attribute value. Defaults to 0.8.
   capacityFactor?: number
+  // Types filled after main package using remaining budget, sorted by preferAttribute DESC.
+  postFillTypes?: PostFillCfg[]
 }
 
 export interface SlotItem {
@@ -346,6 +353,33 @@ function tryFillPackage(
     if (!toFill.has(type)) continue
     pkg[type] = [{ entity, quantity: quantities[type] ?? 1 }]
   }
+
+  // Post-fill optional types (e.g. SSD) using remaining budget after full package.
+  // Candidates sorted by preferAttribute DESC → biggest affordable wins.
+  if (cfg.postFillTypes?.length) {
+    const allCtx = [...context, ...anchorCtx, ...Object.values(chosen)]
+      .filter((e, i, arr) => arr.indexOf(e) === i)
+    for (const { type, preferAttribute } of cfg.postFillTypes) {
+      if (!toFill.has(type) || pkg[type]) continue
+      const postCandidates = available
+        .filter((e) => e.entity_type === type && cachedPairwise(e, allCtx, rules))
+        .sort((a, b) => {
+          if (preferAttribute) {
+            const diff = Number(b.attributes[preferAttribute] ?? 0) - Number(a.attributes[preferAttribute] ?? 0)
+            if (diff !== 0) return diff
+          }
+          return unitCost(b, cfg) - unitCost(a, cfg)
+        })
+      for (const candidate of postCandidates) {
+        if (unitCost(candidate, cfg) <= remaining) {
+          pkg[type] = [{ entity: candidate, quantity: 1 }]
+          remaining -= unitCost(candidate, cfg)
+          break
+        }
+      }
+    }
+  }
+
   return pkg
 }
 

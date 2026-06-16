@@ -156,6 +156,31 @@ export const RULES: CompatibilityRule[] = [
   },
 
   {
+    id:         8,
+    code:       'SSD_M2_SLOT',
+    name:       'SSD Requires M.2 Slot on Motherboard',
+    check_type: 'pairwise',
+    severity:   'error',
+    priority:   170,
+    is_active:  true,
+    scope: {
+      match_by:         'attribute_pair',
+      source_attribute: 'capacity_gb',
+      target_attribute: 'm2_slots',
+      source_types:     ['ssd'],
+      target_types:     ['motherboard'],
+    },
+    condition: {
+      '>=': [
+        { var: 'target.attributes.m2_slots' },
+        1,
+      ],
+    },
+    message:    ':target.name ไม่มี M.2 slot สำหรับ SSD',
+    resolution: 'เลือก Motherboard ที่มี M.2 slot อย่างน้อย 1 ช่อง',
+  },
+
+  {
     id:         6,
     code:       'AGG_POWER_SAFETY',
     name:       'Power Usage Should Stay Under 80% PSU Capacity',

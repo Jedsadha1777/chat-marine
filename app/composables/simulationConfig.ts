@@ -1,7 +1,7 @@
 import type { EntityType } from '~/data/entities'
 
-// BOM display order — capacity container (psu) last
-export const FILL_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard', 'ram', 'psu']
+// BOM display order — capacity container (psu) before optional SSD
+export const FILL_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard', 'ram', 'psu', 'ssd']
 
 // Hard max per slot type (undefined = unlimited)
 export const MAX_PER_TYPE: Partial<Record<EntityType, number>> = {
@@ -9,6 +9,7 @@ export const MAX_PER_TYPE: Partial<Record<EntityType, number>> = {
   cpu:         1,
   motherboard: 1,
   psu:         1,
+  ssd:         1,
 }
 
 // Dynamic limit sourced from another entity's attribute
@@ -25,6 +26,12 @@ export const DYNAMIC_MAX_PER_TYPE: Partial<Record<EntityType, {
     fallback:           2,
   },
 }
+
+// Post-fill types: filled after main package (anchor+core) using remaining budget.
+// Sorted by preferAttribute DESC so biggest-affordable wins.
+export const POST_FILL_TYPES: Array<{ type: EntityType; preferAttribute: string }> = [
+  { type: 'ssd', preferAttribute: 'capacity_gb' },
+]
 
 // Slots that need aggregate rule check (capacity containers)
 export const AGGREGATE_GUARD_TYPES: EntityType[] = ['psu', 'ram']

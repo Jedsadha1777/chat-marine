@@ -1,7 +1,7 @@
 import type { DomainConfig } from '~/engine/suggest'
 import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entityTypes'
 import {
-  FILL_ORDER, MAX_PER_TYPE, DYNAMIC_MAX_PER_TYPE,
+  FILL_ORDER, MAX_PER_TYPE, DYNAMIC_MAX_PER_TYPE, POST_FILL_TYPES,
   AGGREGATE_GUARD_TYPES, AGGREGATE_DISPLAY, REQUIRED_TYPES,
   COST_ATTRIBUTE, COST_PRECISION, CAPACITY_FACTOR, SELECTION_ORDER,
 } from '~/composables/simulationConfig'
@@ -25,4 +25,5 @@ export const DEFAULT_DOMAIN_CONFIG: DomainConfig = {
   loadAttributes:    ['power_draw_w', 'tdp_w'],
   capacityFactor:    CAPACITY_FACTOR,
   selectionOrder:    [...SELECTION_ORDER],
+  postFillTypes:     [...POST_FILL_TYPES],
 }
