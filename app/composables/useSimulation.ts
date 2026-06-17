@@ -1,5 +1,5 @@
 import type { Entity, ValidationIssue, BomItem } from '~/data/types'
-import { ENTITY_TYPES, type EntityType } from '~/data/entities'
+import { ENTITY_TYPES, type EntityType } from '~/data/entityTypes'
 import { COST_ATTRIBUTE, COST_PRECISION } from '~/composables/simulationConfig'
 
 export interface SlotItem {

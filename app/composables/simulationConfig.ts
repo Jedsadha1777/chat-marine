@@ -1,4 +1,7 @@
-import type { EntityType } from '~/data/entities'
+import type { DomainConfig } from '~/engine/suggest'
+import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entityTypes'
+import type { EntityType } from '~/data/entityTypes'
+import { TIER_RULES } from '~/composables/tierRules'
 
 // BOM display order — SSD shown above PSU
 export const FILL_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard', 'ram', 'ssd', 'psu']
@@ -62,3 +65,24 @@ export const CAPACITY_FACTOR = 0.8
 
 export const COST_ATTRIBUTE = 'unit_cost'
 export const COST_PRECISION = 0
+
+export const DEFAULT_DOMAIN_CONFIG: DomainConfig = {
+  fillOrder:           [...FILL_ORDER],
+  entityTypes:         [...ENTITY_TYPES],
+  entityTypeLabels:    { ...ENTITY_TYPE_LABELS },
+  maxPerType:          { ...MAX_PER_TYPE },
+  dynamicMaxPerType:   { ...DYNAMIC_MAX_PER_TYPE },
+  aggregateGuardTypes: [...AGGREGATE_GUARD_TYPES],
+  aggregateDisplay:    { ...AGGREGATE_DISPLAY },
+  requiredTypes:       [...REQUIRED_TYPES],
+  costAttribute:       COST_ATTRIBUTE,
+  costPrecision:       COST_PRECISION,
+  tierRules:           [...TIER_RULES],
+  anchorType:          'gpu',
+  capacityType:        'psu',
+  capacityAttribute:   'watt_output',
+  loadAttributes:      ['power_draw_w', 'tdp_w'],
+  capacityFactor:      CAPACITY_FACTOR,
+  selectionOrder:      [...SELECTION_ORDER],
+  postFillTypes:       [...POST_FILL_TYPES],
+}

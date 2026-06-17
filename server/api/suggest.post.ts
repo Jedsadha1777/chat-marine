@@ -1,6 +1,6 @@
 import { buildSuggestion, validateItems, aggregateDetailFor, buildBom, totalCostOf, toSimItems } from '~/engine/suggest'
 import { RULES } from '~/data/rules'
-import { DEFAULT_DOMAIN_CONFIG } from '~/composables/domainConfig'
+import { DEFAULT_DOMAIN_CONFIG } from '~/composables/simulationConfig'
 import { ENTITY_TYPES } from '~/data/entityTypes'
 import { fetchCandidates, fetchByIds } from '../utils/db'
 import type { SlotItem } from '~/engine/suggest'
