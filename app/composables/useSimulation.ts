@@ -50,7 +50,11 @@ export function useSimulation() {
     () => $fetch('/api/suggest', { method: 'POST', body: requestBody.value }),
   )
 
-  watch(requestBody, () => _refresh(), { deep: true })
+  let _debounce: ReturnType<typeof setTimeout> | null = null
+  watch(requestBody, () => {
+    if (_debounce) clearTimeout(_debounce)
+    _debounce = setTimeout(() => _refresh(), 400)
+  }, { deep: true })
 
   // ── Derived state ─────────────────────────────────────────────────────────
   const suggestion = computed((): Record<EntityType, SlotItem[]> => {
