@@ -538,8 +538,8 @@ export function validateItems(
         rule_code:  `MISSING_${t.toUpperCase()}`,
         check_type: 'aggregate',
         severity:   'error',
-        message:    `ไม่มี ${cfg.entityTypeLabels[t] ?? t} ใน configuration`,
-        resolution: `เพิ่ม ${cfg.entityTypeLabels[t] ?? t} อย่างน้อย 1 รายการ`,
+        message:    `${cfg.entityTypeLabels[t] ?? t} is missing from the configuration`,
+        resolution: `Add at least one ${cfg.entityTypeLabels[t] ?? t}`,
       })
     }
   }

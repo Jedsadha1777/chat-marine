@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
   //
   // Each type gets a budget proportional to its typical weight so that the
   // top-20 candidates cover an affordable price range for the total budget.
-  // Without this, on a ฿50K budget all 20 GPU candidates are ฿23K+ and the
+  // Without this, on a 50K budget all 20 GPU candidates are 23K+ and the
   // engine can't build a full set (GPU + expensive CPU + MB + RAM > budget).
   const TYPE_RATIO: Record<string, number> = {
     gpu: 0.40, cpu: 0.20, motherboard: 0.15, ram: 0.15, psu: 0.10, ssd: 0.12,

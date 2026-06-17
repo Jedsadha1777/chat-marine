@@ -22,8 +22,8 @@ export const RULES: CompatibilityRule[] = [
         { var: 'target.attributes.socket' },
       ],
     },
-    message:    'Socket ไม่ตรง: :source.attributes.socket ≠ :target.attributes.socket',
-    resolution: 'เลือก CPU และ Motherboard ที่ใช้ socket เดียวกัน',
+    message:    'Socket mismatch: :source.attributes.socket ≠ :target.attributes.socket',
+    resolution: 'Select a CPU and Motherboard with the same socket',
   },
 
   {
@@ -47,8 +47,8 @@ export const RULES: CompatibilityRule[] = [
         { var: 'target.attributes.ram_type' },
       ],
     },
-    message:    ':source.name ใช้ RAM :source.attributes.ram_type แต่ :target.name รองรับ :target.attributes.ram_type',
-    resolution: 'เลือก RAM ที่ตรงกับ type ของ Motherboard',
+    message:    ':source.name requires :source.attributes.ram_type but :target.name supports :target.attributes.ram_type',
+    resolution: 'Select RAM that matches the Motherboard memory type',
   },
 
   {
@@ -72,8 +72,8 @@ export const RULES: CompatibilityRule[] = [
         { var: 'target.attributes.ram_slots' },
       ],
     },
-    message:    'RAM มี :source.attributes.modules โมดูล เกิน slot ของ :target.name ที่มี :target.attributes.ram_slots slot',
-    resolution: 'เลือก RAM ที่มีจำนวนโมดูลไม่เกิน slot ของ Motherboard',
+    message:    'RAM has :source.attributes.modules modules — exceeds :target.name which has :target.attributes.ram_slots slots',
+    resolution: 'Select RAM with fewer modules than the Motherboard slot count',
   },
 
   {
@@ -97,8 +97,8 @@ export const RULES: CompatibilityRule[] = [
         { var: 'target.attributes.tdp_support_w' },
       ],
     },
-    message:    'CPU TDP :source.attributes.tdp_w W เกินที่ :target.name รองรับ :target.attributes.tdp_support_w W',
-    resolution: 'เลือก Motherboard ที่รองรับ TDP ของ CPU',
+    message:    'CPU TDP :source.attributes.tdp_w W exceeds :target.name rated limit of :target.attributes.tdp_support_w W',
+    resolution: 'Select a Motherboard that supports the CPU TDP',
   },
 
   {
@@ -123,8 +123,8 @@ export const RULES: CompatibilityRule[] = [
       },
       operator: '<=',
     },
-    message:    'RAM รวม :aggregate_value โมดูล เกิน Motherboard ที่มี :capacity_value slot',
-    resolution: 'ลดจำนวน RAM kit หรือเลือก Motherboard ที่มี slot มากกว่านี้',
+    message:    'Total RAM modules (:aggregate_value) exceed Motherboard slot count (:capacity_value)',
+    resolution: 'Reduce the number of RAM kits or select a Motherboard with more slots',
   },
 
   {
@@ -151,8 +151,8 @@ export const RULES: CompatibilityRule[] = [
       },
       operator: '<=',
     },
-    message:    'พลังงานรวม :aggregate_value W เกิน PSU :capacity_value W (:utilization_pct|round(1)%)',
-    resolution: 'เลือก PSU ที่มี wattage สูงกว่า :aggregate_value W',
+    message:    'Total power draw :aggregate_value W exceeds PSU capacity :capacity_value W (:utilization_pct|round(1)%)',
+    resolution: 'Select a PSU with wattage above :aggregate_value W',
   },
 
   {
@@ -176,8 +176,8 @@ export const RULES: CompatibilityRule[] = [
         1,
       ],
     },
-    message:    ':target.name ไม่มี M.2 slot สำหรับ SSD',
-    resolution: 'เลือก Motherboard ที่มี M.2 slot อย่างน้อย 1 ช่อง',
+    message:    ':target.name has no M.2 slot for the SSD',
+    resolution: 'Select a Motherboard with at least one M.2 slot',
   },
 
   {
@@ -205,8 +205,8 @@ export const RULES: CompatibilityRule[] = [
       },
       operator: '<=',
     },
-    message:    'พลังงานรวม :aggregate_value W เกิน 80% ของ PSU',
-    resolution: 'แนะนำ PSU อย่างน้อย :aggregate_value|multiply(1.25)|ceil W',
+    message:    'Total power draw :aggregate_value W exceeds 80% of PSU capacity',
+    resolution: 'Recommended PSU: at least :aggregate_value|multiply(1.25)|ceil W',
   },
 
 ]

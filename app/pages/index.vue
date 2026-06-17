@@ -135,18 +135,18 @@ const powerPct = computed(() => {
     </div>
 
     <div class="toolbar">
-      <label class="field-label">งบประมาณ</label>
+      <label class="field-label">Budget</label>
       <input v-model="budgetInput" type="number" step="1000" min="0"
-        placeholder="ไม่จำกัด" class="budget-input" />
+        placeholder="No limit" class="budget-input" />
       <div class="presets">
         <button v-for="p in PRESETS" :key="p"
           class="btn-sm" :class="{ 'btn-active': budget === p }"
-          @click="setPreset(p)">฿{{ (p/1000).toFixed(0) }}K</button>
+          @click="setPreset(p)">{{ (p/1000).toFixed(0) }}K</button>
       </div>
     </div>
 
     <div v-if="floorOverflow" class="warning-banner">
-      งบประมาณต่ำกว่าขั้นต่ำที่กำหนด — บางชิ้นส่วนอาจไม่ถูกเลือก
+      Budget is below the minimum threshold — some components may not be selected
     </div>
 
     <div class="body">
@@ -155,10 +155,10 @@ const powerPct = computed(() => {
         <table class="slot-table">
           <thead>
             <tr>
-              <th>ประเภท</th>
-              <th>รุ่น</th>
-              <th>ราคา</th>
-              <th>สถานะ</th>
+              <th>Type</th>
+              <th>Model</th>
+              <th>Price</th>
+              <th>Status</th>
               <th></th>
             </tr>
           </thead>
@@ -171,7 +171,7 @@ const powerPct = computed(() => {
                 <td class="td-type">{{ ENTITY_TYPE_LABELS[type] }}</td>
                 <td class="td-name">
                   <template v-if="excluded[type]">
-                    <span class="text-muted">— ไม่ใช้ —</span>
+                    <span class="text-muted">— excluded —</span>
                   </template>
                   <template v-else-if="suggestion[type].length > 0">
                     <div v-for="(item, i) in suggestion[type]" :key="item.entity.id" class="slot-item-row">
@@ -180,7 +180,7 @@ const powerPct = computed(() => {
                     </div>
                   </template>
                   <template v-else>
-                    <span class="text-muted">— ไม่มีในงบ —</span>
+                    <span class="text-muted">— out of budget —</span>
                   </template>
                 </td>
                 <td class="td-price">
@@ -194,15 +194,15 @@ const powerPct = computed(() => {
                   </template>
                 </td>
                 <td class="td-status">
-                  <span v-if="excluded[type]"    class="badge err">ไม่ใช้</span>
-                  <span v-else-if="pinned[type].length > 0" class="badge pin">ล็อก</span>
-                  <span v-else-if="suggestion[type].length > 0" class="badge auto">อัตโนมัติ</span>
+                  <span v-if="excluded[type]"    class="badge err">excluded</span>
+                  <span v-else-if="pinned[type].length > 0" class="badge pin">pinned</span>
+                  <span v-else-if="suggestion[type].length > 0" class="badge auto">auto</span>
                 </td>
                 <td class="td-action">
                   <button class="btn-sm" :class="expandedSlot === type ? 'btn-active' : ''"
-                    @click="toggleExpand(type)">เลือก</button>
+                    @click="toggleExpand(type)">Pick</button>
                   <button v-if="pinned[type].length > 0" class="btn-sm btn-ghost"
-                    style="margin-left: 6px" @click="pin(type, null)">ยกเลิก</button>
+                    style="margin-left: 6px" @click="pin(type, null)">Clear</button>
                 </td>
               </tr>
 
@@ -214,13 +214,13 @@ const powerPct = computed(() => {
       <div class="summary-col">
 
         <div class="sum-box">
-          <div class="sum-title">งบประมาณ</div>
+          <div class="sum-title">Budget</div>
           <div class="sum-row">
-            <span>กำหนด</span>
-            <span>{{ budget !== null ? fmt(budget) : 'ไม่จำกัด' }}</span>
+            <span>Target</span>
+            <span>{{ budget !== null ? fmt(budget) : 'No limit' }}</span>
           </div>
           <div class="sum-row">
-            <span>ราคารวม</span>
+            <span>Total</span>
             <strong>{{ fmt(totalCost) }}</strong>
           </div>
           <template v-if="budget !== null">
@@ -230,7 +230,7 @@ const powerPct = computed(() => {
                 :style="{ width: Math.min(budgetUsedPct, 100) + '%' }"/>
             </div>
             <div class="sum-row">
-              <span>คงเหลือ</span>
+              <span>Remaining</span>
               <span :class="(budgetRemaining ?? 0) < 0 ? 'text-err' : 'text-ok'">
                 {{ fmt(budgetRemaining ?? 0) }}
               </span>
@@ -239,9 +239,9 @@ const powerPct = computed(() => {
         </div>
 
         <div v-if="powerAgg !== null && powerCap !== null" class="sum-box">
-          <div class="sum-title">พลังงาน</div>
+          <div class="sum-title">Power</div>
           <div class="sum-row">
-            <span>รวม</span>
+            <span>Draw</span>
             <span>{{ powerAgg }}W / {{ powerCap }}W</span>
           </div>
           <div class="progress-wrap">
@@ -252,7 +252,7 @@ const powerPct = computed(() => {
         </div>
 
         <div v-if="issues.length" class="sum-box">
-          <div class="sum-title">ปัญหาที่พบ</div>
+          <div class="sum-title">Issues</div>
           <div v-for="(issue, i) in issues" :key="i"
             class="issue-row" :class="'issue-' + issue.severity">
             <span class="issue-icon">{{ issue.severity === 'error' ? '✗' : '△' }}</span>
@@ -264,7 +264,7 @@ const powerPct = computed(() => {
         </div>
 
         <div v-if="bom.length" class="sum-box">
-          <div class="sum-title">รายการสั่งซื้อ</div>
+          <div class="sum-title">Bill of Materials</div>
           <table class="bom-tbl">
             <tbody>
               <tr v-for="item in bom" :key="item.line_number">
@@ -273,7 +273,7 @@ const powerPct = computed(() => {
                 <td class="bom-p">{{ fmt(item.total_cost) }}</td>
               </tr>
               <tr class="bom-sum">
-                <td colspan="2">รวม</td>
+                <td colspan="2">Total</td>
                 <td class="bom-p">{{ fmt(totalCost) }}</td>
               </tr>
             </tbody>
@@ -290,9 +290,9 @@ const powerPct = computed(() => {
           <div class="lb-modal" role="dialog">
             <div class="lb-header">
               <div class="lb-title">
-                เลือก {{ ENTITY_TYPE_LABELS[expandedSlot] }}
+                Select {{ ENTITY_TYPE_LABELS[expandedSlot] }}
                 <span v-if="slotLimit(expandedSlot) > 1" class="lb-subtitle">
-                  (สูงสุด {{ slotLimit(expandedSlot) }} ชิ้น)
+                  (max {{ slotLimit(expandedSlot) }})
                 </span>
               </div>
               <button class="lb-close" @click="closePicker()">✕</button>
@@ -302,7 +302,7 @@ const powerPct = computed(() => {
               <div class="pick-row"
                 :class="{ 'pick-active': pinned[expandedSlot].length === 0 && !excluded[expandedSlot] }"
                 @click="selectAuto(expandedSlot)">
-                <span>ให้ระบบเลือกอัตโนมัติ</span>
+                <span>Let the system choose automatically</span>
                 <span class="pick-check">{{ pinned[expandedSlot].length === 0 && !excluded[expandedSlot] ? '✓' : '' }}</span>
               </div>
 
@@ -310,13 +310,13 @@ const powerPct = computed(() => {
                 class="pick-row pick-row-exclude"
                 :class="{ 'pick-active': excluded[expandedSlot] }"
                 @click="selectExclude(expandedSlot)">
-                <span>ไม่ใช้ชิ้นส่วนนี้</span>
+                <span>Exclude this component</span>
                 <span class="pick-check">{{ excluded[expandedSlot] ? '✓' : '' }}</span>
               </div>
 
               <div class="pick-divider"></div>
 
-              <div v-if="pickerLoading" class="pick-loading">กำลังโหลด...</div>
+              <div v-if="pickerLoading" class="pick-loading">Loading...</div>
 
               <div v-for="entity in pickerEntities" :key="entity.id"
                 class="pick-row"
@@ -339,7 +339,7 @@ const powerPct = computed(() => {
                     <button class="btn-sm"
                       :class="canAddToSlot(expandedSlot, entity) ? 'btn-primary' : 'btn-replace'"
                       @click="selectPin(expandedSlot, entity)">
-                      {{ canAddToSlot(expandedSlot, entity) ? 'เลือก' : 'แทนที่' }}
+                      {{ canAddToSlot(expandedSlot, entity) ? 'Select' : 'Replace' }}
                     </button>
                   </template>
                 </div>
@@ -347,7 +347,7 @@ const powerPct = computed(() => {
             </div>
 
             <div class="lb-footer">
-              <button class="btn-sm btn-primary" @click="closePicker()">ตกลง</button>
+              <button class="btn-sm btn-primary" @click="closePicker()">Done</button>
             </div>
           </div>
         </div>
