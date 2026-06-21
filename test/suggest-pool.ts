@@ -398,8 +398,12 @@ for (const budget of [50_000, 40_000, 30_000]) {
   const hasSsd = hasType(result.slots, 'ssd')
   const mbRt   = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   const ramRt  = slotOf(result.slots, 'ram')?.attributes['ram_type']
-  const gpuName = slotOf(result.slots, 'gpu')?.name?.slice(0, 25) ?? 'none'
-  console.log(`\n— no-pin @${budget/1000}k: total=${total} gpu=${gpuName} cpu=${hasCpu} mb=${hasMb} ram=${hasRam} psu=${hasPsu} ssd=${hasSsd} MB.rtype=${mbRt} RAM.rtype=${ramRt}`)
+  const gpuName  = slotOf(result.slots, 'gpu')?.name?.slice(0, 25) ?? 'none'
+  const gpuCost  = Number(slotOf(result.slots, 'gpu')?.attributes.unit_cost ?? 0)
+  const ramName  = slotOf(result.slots, 'ram')?.name?.slice(0, 20) ?? 'none'
+  const ramCost  = Number(slotOf(result.slots, 'ram')?.attributes.unit_cost ?? 0)
+  const ramCap   = slotOf(result.slots, 'ram')?.attributes.capacity_gb ?? slotOf(result.slots, 'ram')?.attributes.size_gb ?? '?'
+  console.log(`\n— no-pin @${budget/1000}k: total=${total} gpu=${gpuName}(${gpuCost}) ram=${ramName}(${ramCost}) cap=${ramCap}GB MB.rtype=${mbRt}`)
   assert(total <= budget, `8 no-pin@${budget/1000}k: total ≤ budget`, `got ${total}`)
   assert(hasGpu,          `8 no-pin@${budget/1000}k: GPU present`)
   assert(hasCpu,          `8 no-pin@${budget/1000}k: CPU present`)
@@ -410,6 +414,9 @@ for (const budget of [50_000, 40_000, 30_000]) {
     const mbRts: string[] = Array.isArray(mbRt) ? mbRt : [mbRt]
     assert(mbRts.includes(String(ramRt)), `8 no-pin@${budget/1000}k: MB.ram_type includes RAM.ram_type`, `MB=${mbRts} RAM=${ramRt}`)
   }
+  const anchorTarget = Math.round(budget * Math.ceil(CFG.entityTypes.length / 2) / CFG.entityTypes.length)
+  assert(gpuCost <= Math.round(anchorTarget * 1.3), `8 no-pin@${budget/1000}k: GPU near balanced target (≤target×1.3)`, `gpuCost=${gpuCost} target=${anchorTarget}`)
+  assert(ramCost >= Math.round(budget * 0.1),       `8 no-pin@${budget/1000}k: RAM cost ≥10% of budget (not bottom-tier)`, `ramCost=${ramCost}`)
 }
 
 // ── SECTION 9: pairwise compatibility verification ───────────────────────────

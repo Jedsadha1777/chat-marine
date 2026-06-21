@@ -452,9 +452,11 @@ function specChainFill(
     return result
   }
 
+  // Anchor target = proportional budget share so anchor doesn't consume all budget.
+  const anchorTarget = Math.round(effectiveBudget * Math.ceil(cfg.entityTypes.length / 2) / cfg.entityTypes.length)
   const anchorCandidates = available
     .filter((e) => e.entity_type === anchorType)
-    .sort((a, b) => unitCost(b, cfg) - unitCost(a, cfg))
+    .sort((a, b) => Math.abs(unitCost(a, cfg) - anchorTarget) - Math.abs(unitCost(b, cfg) - anchorTarget))
 
   for (const anchor of anchorCandidates) {
     const pkg = tryFillPackage(anchor, pinnedEntities, available, rules, cfg, effectiveBudget, capacityFactor, toFill)

@@ -56,7 +56,11 @@ export default defineEventHandler(async (event) => {
     ? Math.round(effectiveMax / coreFilledTypes.length)
     : effectiveMax
 
-  const [results, cheapResults] = await Promise.all([
+  // Proportional anchor target — mirrors engine's balanced sort (derived from entityTypes.length).
+  const anchorTarget = Math.round(effectiveMax * Math.ceil(ENTITY_TYPES.length / 2) / ENTITY_TYPES.length)
+  const anchorFillable = !(excluded[anchorType] || (pinnedEntities[anchorType]?.length ?? 0) > 0)
+
+  const [results, nearTargetResults, cheapResults] = await Promise.all([
     Promise.all(
       ENTITY_TYPES.map((type) => {
         if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return Promise.resolve([] as Entity[])
@@ -65,6 +69,9 @@ export default defineEventHandler(async (event) => {
         return fetchCandidates(DB, type, perSlot, blockedIds, 15)
       })
     ),
+    anchorFillable
+      ? fetchCandidates(DB, anchorType, anchorTarget, blockedIds, 20)
+      : Promise.resolve([] as Entity[]),
     Promise.all(
       coreFilledTypes.map((type) =>
         fetchCheapestCandidates(DB, type, perSlot, blockedIds, 10),
@@ -75,7 +82,7 @@ export default defineEventHandler(async (event) => {
   const seenIds = new Set<number>()
   const candidates: Entity[] = [
     ...Object.values(pinnedEntities).flat().map((s) => s.entity),
-    ...[...results.flat(), ...cheapResults.flat()].filter((e) => {
+    ...[...results.flat(), ...nearTargetResults, ...cheapResults.flat()].filter((e) => {
       if (seenIds.has(e.id)) return false
       seenIds.add(e.id)
       return true
