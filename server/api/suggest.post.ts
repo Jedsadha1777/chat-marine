@@ -2,7 +2,7 @@ import { buildSuggestion, validateItems, aggregateDetailFor, buildBom, totalCost
 import { RULES } from '~/data/rules'
 import { DEFAULT_DOMAIN_CONFIG } from '~/composables/simulationConfig'
 import { ENTITY_TYPES } from '~/data/entityTypes'
-import { fetchCandidates, fetchByIds } from '../utils/db'
+import { fetchCandidates, fetchCandidatesByAttr, fetchByIds } from '../utils/db'
 import type { SlotItem } from '~/engine/suggest'
 import type { Entity } from '~/data/types'
 
@@ -38,44 +38,61 @@ export default defineEventHandler(async (event) => {
     })).filter((s) => s.entity != null)
   }
 
-  // Remaining budget after pinned items — used as the price ceiling for DB queries
-  // on non-PSU types. When expensive items are pinned (e.g. GPU 5070 at 21920),
-  // using the full budget as ceiling fills the top-20 with expensive DDR5/LGA1851
-  // boards, pushing affordable DDR4/AM4 boards to position 67+ (outside LIMIT 20).
-  // The engine's pairwise RAM_TYPE_MATCH then rejects every DDR5 candidate and
-  // returns an empty build. Using the effective remaining budget lowers the ceiling
-  // enough to let DDR4-compatible boards enter the top-20 candidate pool.
-  //
-  // PSU is exempt: it needs the full-budget ceiling so high-wattage units (≥937W
-  // required for GPU 5070) remain reachable. PSU cost is bounded by power draw,
-  // not by how much was spent on other components.
+  // Remaining budget after pinned items — used as the price ceiling for
+  // supplemental compatibility queries (see below).
   const pinnedCostTotal = Object.values(pinnedEntities)
     .flat()
     .reduce((sum, s) => sum + Number(s.entity.attributes.unit_cost ?? 0) * s.quantity, 0)
   const effectiveMax = budget !== null ? Math.max(0, budget - pinnedCostTotal) : 999_999_999
-  const capacityType = DEFAULT_DOMAIN_CONFIG.capacityType ?? 'psu'
 
   // Fetch top-20 candidates per type — 5 D1 queries in parallel
   // 5 types × 20 rows = 100 reads per request; 100 JSON.parse calls ≈ 3ms CPU
   // — stays safely under Cloudflare Workers free-tier 10ms CPU limit.
   //
   // Each type gets a budget proportional to its typical weight so that the
-  // top-20 candidates cover an affordable price range for the remaining budget.
+  // top-20 candidates cover an affordable price range for the total budget.
   const TYPE_RATIO: Record<string, number> = {
     gpu: 0.40, cpu: 0.20, motherboard: 0.15, ram: 0.15, psu: 0.10, ssd: 0.12,
   }
-  const results = await Promise.all(
-    ENTITY_TYPES.map((type) => {
-      if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return Promise.resolve([] as Entity[])
-      const ratio = budget !== null ? (TYPE_RATIO[type] ?? 0.20) : 1
-      const budgetForQuery = type === capacityType ? maxCost : effectiveMax
-      const typeBudget = Math.round(budgetForQuery * ratio)
-      return fetchCandidates(DB, type, typeBudget, blockedIds, 20)
-    })
-  )
+
+  // Supplemental queries for DDR4 compatibility:
+  // When DDR4 RAM is pinned, the main MB query (ordered by unit_cost DESC) fills
+  // its top-20 entirely with DDR5 boards — AM4/LGA1700+DDR4 boards appear at
+  // position 67+ and are cut off. The engine's RAM_TYPE_MATCH pairwise rule then
+  // rejects every DDR5 candidate, returning an empty build.
+  //
+  // Fix: also fetch DDR4-specific MB candidates and AM4 CPUs within the remaining
+  // budget. AM4 CPUs are needed because they're too cheap to appear in the top-20
+  // general CPU query but are the only socket type for most DDR4 boards.
+  //
+  // These run in parallel with the main queries (7 total D1 calls ≈ 3.5ms CPU).
+  const pinnedRamType = pinnedEntities['ram']?.[0]?.entity.attributes['ram_type'] as string | undefined
+  const needDDR4Supplement = pinnedRamType === 'DDR4'
+  const mbPinned  = (pinnedEntities['motherboard']?.length ?? 0) > 0
+  const cpuPinned = (pinnedEntities['cpu']?.length ?? 0) > 0
+
+  const [results, suppMbs, suppCpus] = await Promise.all([
+    Promise.all(
+      ENTITY_TYPES.map((type) => {
+        if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return Promise.resolve([] as Entity[])
+        const ratio = budget !== null ? (TYPE_RATIO[type] ?? 0.20) : 1
+        const typeBudget = Math.round(maxCost * ratio)
+        return fetchCandidates(DB, type, typeBudget, blockedIds, 20)
+      })
+    ),
+    needDDR4Supplement && !excluded['motherboard'] && !mbPinned
+      ? fetchCandidatesByAttr(DB, 'motherboard', '$.ram_type', 'DDR4', effectiveMax, blockedIds, 10)
+      : Promise.resolve([] as Entity[]),
+    needDDR4Supplement && !excluded['cpu'] && !cpuPinned
+      ? fetchCandidatesByAttr(DB, 'cpu', '$.socket', 'AM4', effectiveMax, blockedIds, 10)
+      : Promise.resolve([] as Entity[]),
+  ])
+
   const candidates: Entity[] = [
     ...Object.values(pinnedEntities).flat().map((s) => s.entity),
     ...results.flat(),
+    ...suppMbs,
+    ...suppCpus,
   ]
 
   const result = buildSuggestion(candidates, RULES, DEFAULT_DOMAIN_CONFIG, {
