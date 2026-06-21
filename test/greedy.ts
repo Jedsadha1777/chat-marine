@@ -8,7 +8,7 @@
  *   PSU: cheapest adequate for total power draw (÷ psuSafetyFactor)
  */
 
-import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entities'
+import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entityTypes'
 import type { Entity } from '~/data/types'
 import { RULES } from '~/data/rules'
 import { buildSuggestion, type DomainConfig } from '~/engine/suggest'
@@ -191,6 +191,101 @@ assert(
   'tierRule D: low-cache CPU used as fallback (no high-cache CPU in pool)',
   `got CPU=${tierCpuD}`,
 )
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SECTION 3 — DDR4 candidate pool selection (server-layer bug reproduction)
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Bug in suggest.post.ts: typeBudget = budget × TYPE_RATIO
+//   budget=50000, MB ratio=0.15 → typeBudget=7500
+//   Top-20 MBs within 7500 (ORDER BY unit_cost DESC) are ALL DDR5 (AM5/LGA1851/LGA1700+DDR5)
+//   DDR4 MBs appear at position 67+ → cut off by LIMIT 20 → absent from engine pool
+//   Engine's pairwise RAM_TYPE_MATCH rejects all DDR5 MBs when DDR4 RAM is pinned → empty build
+//
+// Fix in suggest.post.ts: effectiveBudget = budget − pinnedCost for non-PSU types
+//   GPU(21920)+RAM(1860) pinned → effectiveBudget=26220 → MB typeBudget=3933
+//   At 3933 ceiling, only ~16 DDR5 boards fit → LGA1700+DDR4 boards appear at positions 11&17
+//   Engine finds LGA1700 CPU + LGA1700+DDR4 MB + DDR4 RAM → valid pairwise chain
+
+console.log('\n── DDR4 pin + GPU: effectiveBudget candidate selection (server bug) ──')
+
+const GPU_5070_ENTITY: Entity = {
+  id: 310, uuid: 'gpu-5070', entity_type: 'gpu', code: 'GPU-5070',
+  name: 'RTX 5070 12GB', status: 'published',
+  attributes: { vram_gb: 12, memory_bus_bit: 192, power_draw_w: 650, pcie_version: '5.0', unit_cost: 21920 },
+}
+
+const DDR4_RAM_ENTITY: Entity = {
+  id: 311, uuid: 'ram-ddr4', entity_type: 'ram', code: 'RAM-DDR4',
+  name: 'DDR4 8GB', status: 'published',
+  attributes: { ram_type: 'DDR4', modules: 1, speed_mhz: 3200, power_draw_w: 5, unit_cost: 1860 },
+}
+
+const MB_LGA1700_DDR5_ONLY: Entity = {
+  id: 312, uuid: 'mb-lga1700-ddr5', entity_type: 'motherboard', code: 'MB-LGA1700-DDR5',
+  name: 'LGA1700 DDR5 MB (expensive, fills top-20)', status: 'published',
+  attributes: { socket: 'LGA1700', ram_type: 'DDR5', ram_slots: 4, max_ram_gb: 192,
+    tdp_support_w: 300, power_draw_w: 80, unit_cost: 6690 },
+}
+
+const MB_LGA1700_DDR4: Entity = {
+  id: 313, uuid: 'mb-lga1700-ddr4', entity_type: 'motherboard', code: 'MB-LGA1700-DDR4',
+  name: 'LGA1700 DDR4 MB (enters pool only when effectiveBudget used)', status: 'published',
+  attributes: { socket: 'LGA1700', ram_type: 'DDR4', ram_slots: 4, max_ram_gb: 128,
+    tdp_support_w: 200, power_draw_w: 30, unit_cost: 3655 },
+}
+
+const CPU_LGA1700_MID: Entity = {
+  id: 314, uuid: 'cpu-i5-12400f', entity_type: 'cpu', code: 'CPU-I5-12400F',
+  name: 'Core i5-12400F LGA1700', status: 'published',
+  attributes: { socket: 'LGA1700', cores: 6, l3_cache_mb: 18, tdp_w: 65, pcie_version: '5.0', unit_cost: 4890 },
+}
+
+const PSU_1000W_ENTITY: Entity = {
+  id: 315, uuid: 'psu-1k', entity_type: 'psu', code: 'PSU-1000W',
+  name: 'PSU 1000W Gold', status: 'published',
+  attributes: { watt_output: 1000, efficiency: '80+ Gold', unit_cost: 3420 },
+}
+
+const ddr4PinnedInput = {
+  budget: 50_000,
+  pinned: {
+    gpu: [{ entity: GPU_5070_ENTITY, quantity: 1 }],
+    ram: [{ entity: DDR4_RAM_ENTITY, quantity: 1 }],
+  },
+}
+
+// Case A: DDR5-only pool — reproduces bug (what the BUGGY server sends: typeBudget=7500, all top-20 DDR5)
+// Engine correctly rejects all DDR5 MBs via pairwise RAM_TYPE_MATCH → empty MB slot
+const ddr4BugPool: Entity[] = [GPU_5070_ENTITY, DDR4_RAM_ENTITY, CPU_LGA1700_MID, MB_LGA1700_DDR5_ONLY, PSU_1000W_ENTITY]
+const ddr4BugResult = buildSuggestion(ddr4BugPool, RULES, CFG, ddr4PinnedInput)
+const bugMbSlots = ddr4BugResult.slots['motherboard'] ?? []
+console.log(`\n— bug pool (DDR5 only): MB=${bugMbSlots.map(s => s.entity.code)}, CPU=${(ddr4BugResult.slots['cpu'] ?? []).map(s => s.entity.code)}`)
+assert(
+  bugMbSlots.length === 0,
+  'bug repro: DDR5-only pool + pinned DDR4 RAM → no MB found (pairwise rejects all DDR5)',
+  `got MB=${bugMbSlots.map(s => s.entity.code)}`,
+)
+
+// Case B: DDR4 MB added — simulates FIXED server (effectiveBudget lowers MB typeBudget: 7500→3933)
+// At 3933 ceiling, LGA1700+DDR4 boards enter the top-20 pool → engine finds compatible MB
+const ddr4FixPool: Entity[] = [GPU_5070_ENTITY, DDR4_RAM_ENTITY, CPU_LGA1700_MID, MB_LGA1700_DDR5_ONLY, MB_LGA1700_DDR4, PSU_1000W_ENTITY]
+const ddr4FixResult = buildSuggestion(ddr4FixPool, RULES, CFG, ddr4PinnedInput)
+const fixMbSlots = ddr4FixResult.slots['motherboard'] ?? []
+const fixTotal = Object.values(ddr4FixResult.slots).flat()
+  .reduce((sum, s) => sum + Number(s.entity.attributes['unit_cost'] ?? 0) * s.quantity, 0)
+console.log(`— fix pool (DDR4 MB included): MB=${fixMbSlots.map(s => s.entity.code)}, total=${fixTotal}`)
+assert(
+  fixMbSlots.length > 0,
+  'fix state: DDR4 MB in pool + pinned DDR4 RAM → MB found',
+  `got MB=${fixMbSlots.map(s => s.entity.code)}`,
+)
+assert(
+  fixMbSlots[0]?.entity.attributes['ram_type'] === 'DDR4',
+  'fix state: selected MB is DDR4-compatible',
+  `got ram_type=${fixMbSlots[0]?.entity.attributes['ram_type']}`,
+)
+assert(fixTotal <= 50_000, 'fix state: total within budget', `got ${fixTotal}`)
 
 // ── summary ──────────────────────────────────────────────────────────────────
 console.log(`\n${'═'.repeat(50)}`)
