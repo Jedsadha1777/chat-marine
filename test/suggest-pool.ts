@@ -7,9 +7,10 @@
  *
  * selectCandidates mirrors the exact logic in suggest.post.ts:
  *   - perSlot = effectiveMax / numCoreFilledTypes  (no hardcoded ratio numbers)
- *   - anchor (gpu): maxCost ceiling, LIMIT 20
+ *   - anchor (gpu): effectiveMax ceiling, LIMIT 60  (LIMIT 20 only reached RTX5070+ at 30k)
  *   - capacity (psu): maxCost ceiling, LIMIT 50  (position 41 = cheapest 1000W)
- *   - core types: perSlot ceiling, LIMIT 20
+ *   - ssd: perSlot ceiling, LIMIT 40  (covers all 37 SSDs)
+ *   - core types (cpu/mb/ram): top-15 expensive + bottom-10 cheapest within perSlot ceiling
  *   - supplemental DDR4 MB when am4Chain: LIMIT 100 (covers all 59 DDR4 boards)
  *   - supplemental LGA1700 CPU when DDR5 RAM pinned: LIMIT 30 (all 26 LGA1700)
  */
@@ -110,6 +111,17 @@ function topN(type: string, ceiling: number, n: number): Entity[] {
     .slice(0, n)
 }
 
+function bottomN(type: string, ceiling: number, n: number): Entity[] {
+  return ALL_ENTITIES
+    .filter(e =>
+      e.entity_type === type &&
+      e.status === 'published' &&
+      Number(e.attributes.unit_cost) <= ceiling,
+    )
+    .sort((a, b) => Number(a.attributes.unit_cost) - Number(b.attributes.unit_cost))
+    .slice(0, n)
+}
+
 function topNByAttr(type: string, attrKey: string, attrVal: string, ceiling: number, n: number): Entity[] {
   return ALL_ENTITIES
     .filter(e => {
@@ -163,12 +175,17 @@ function selectCandidates(
   // Main pool
   const mainPool: Entity[] = ENTITY_TYPES.flatMap(type => {
     if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return []
-    if (type === anchorType)   return topN(type, maxCost, 20)
-    if (type === capacityType) return topN(type, maxCost, 50)  // LIMIT 50: cheapest 1000W at pos 41
-    // SSD is post-filled from remaining budget — needs cheap SSDs (270-890) in pool.
-    // 37 total SSDs; LIMIT 40 includes all of them regardless of perSlot ceiling.
+    // GPU: LIMIT 60. At 30k top-20 are all RTX5070+ (23k+) leaving no room for other parts;
+    // LIMIT 60 reaches affordable GPUs (~14k-22k) that actually fit the budget.
+    if (type === anchorType)   return topN(type, effectiveMax, 60)
+    // PSU: full budget ceiling, LIMIT 50 — cheapest 1000W PSU is at position 41 DESC.
+    if (type === capacityType) return topN(type, maxCost, 50)
+    // SSD: post-filled from remaining budget; LIMIT 40 covers all 37 SSDs.
     if (type === 'ssd')        return topN(type, perSlot, 40)
-    return topN(type, perSlot, 20)
+    // CPU/MB/RAM: top-15 expensive + bottom-10 cheapest.
+    // Cheap items (Athlon at CPU pos 88, A320M at MB pos 243, DDR4-4G at RAM pos 131)
+    // are far beyond LIMIT 15 DESC; bottomN guarantees they're always in the pool.
+    return [...topN(type, perSlot, 15), ...bottomN(type, perSlot, 10)]
   })
 
   // Supplemental: DDR4 MBs covering all 59 DDR4 boards (cheapest at position 59)
@@ -441,7 +458,8 @@ console.log('\n── no-pin budget sweep ──')
 for (const budget of [50_000, 40_000, 30_000]) {
   const candidates = selectCandidates(budget, {})
   const result = buildSuggestion(candidates, RULES, CFG, { budget })
-  const total = totalCostOf(result.slots, CFG)
+  const total  = totalCostOf(result.slots, CFG)
+  const hasGpu = hasType(result.slots, 'gpu')
   const hasCpu = hasType(result.slots, 'cpu')
   const hasMb  = hasType(result.slots, 'motherboard')
   const hasRam = hasType(result.slots, 'ram')
@@ -449,8 +467,10 @@ for (const budget of [50_000, 40_000, 30_000]) {
   const hasSsd = hasType(result.slots, 'ssd')
   const mbRt   = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   const ramRt  = slotOf(result.slots, 'ram')?.attributes['ram_type']
-  console.log(`\n— no-pin @${budget/1000}k: total=${total} cpu=${hasCpu} mb=${hasMb} ram=${hasRam} psu=${hasPsu} ssd=${hasSsd} MB.rtype=${mbRt} RAM.rtype=${ramRt}`)
+  const gpuName = slotOf(result.slots, 'gpu')?.name?.slice(0, 25) ?? 'none'
+  console.log(`\n— no-pin @${budget/1000}k: total=${total} gpu=${gpuName} cpu=${hasCpu} mb=${hasMb} ram=${hasRam} psu=${hasPsu} ssd=${hasSsd} MB.rtype=${mbRt} RAM.rtype=${ramRt}`)
   assert(total <= budget, `8 no-pin@${budget/1000}k: total ≤ budget`, `got ${total}`)
+  assert(hasGpu,          `8 no-pin@${budget/1000}k: GPU present`)
   assert(hasCpu,          `8 no-pin@${budget/1000}k: CPU present`)
   assert(hasMb,           `8 no-pin@${budget/1000}k: MB present`)
   assert(hasPsu,          `8 no-pin@${budget/1000}k: PSU present`)

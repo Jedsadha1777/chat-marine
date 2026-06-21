@@ -2,7 +2,7 @@ import { buildSuggestion, validateItems, aggregateDetailFor, buildBom, totalCost
 import { RULES } from '~/data/rules'
 import { DEFAULT_DOMAIN_CONFIG } from '~/composables/simulationConfig'
 import { ENTITY_TYPES } from '~/data/entityTypes'
-import { fetchCandidates, fetchCandidatesByAttr, fetchByIds } from '../utils/db'
+import { fetchCandidates, fetchCheapestCandidates, fetchCandidatesByAttr, fetchByIds } from '../utils/db'
 import type { SlotItem } from '~/engine/suggest'
 import type { Entity } from '~/data/types'
 
@@ -78,21 +78,34 @@ export default defineEventHandler(async (event) => {
   // Supplement with all LGA1700 CPUs within effectiveMax — LIMIT 30 covers all ~26 LGA1700 CPUs.
   const needSuppLga1700Cpu = pinnedRamType === 'DDR5'
 
-  const [results, suppMbs, suppCpus] = await Promise.all([
+  // Core types that need filling (non-pinned, non-excluded, non-anchor, non-capacity)
+  const coreQueryTypes = coreFilledTypes.filter((t) => t !== 'ssd')
+
+  const [results, cheapResults, suppMbs, suppCpus] = await Promise.all([
     Promise.all(
       ENTITY_TYPES.map((type) => {
         if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return Promise.resolve([] as Entity[])
-        // Anchor: full budget ceiling — picks best GPU that fits overall budget
-        if (type === anchorType) return fetchCandidates(DB, type, maxCost, blockedIds, 20)
-        // Capacity (PSU): full budget ceiling, LIMIT 50 — cheapest adequate 1000W PSU sits at
-        // position 41 in the full DESC price list; LIMIT 50 guarantees it's always reachable
+        // Anchor (GPU): full budget ceiling, LIMIT 60.
+        // At budget=30k top-20 are all RTX 5070+ (23k+), leaving no room for other components.
+        // LIMIT 60 reaches affordable GPUs (~14k-22k) that actually fit within the budget.
+        if (type === anchorType) return fetchCandidates(DB, type, effectiveMax, blockedIds, 60)
+        // Capacity (PSU): full budget ceiling, LIMIT 50 — cheapest adequate 1000W PSU is at
+        // position 41 in the full DESC list; LIMIT 50 guarantees it is always reachable.
         if (type === capacityType) return fetchCandidates(DB, type, maxCost, blockedIds, 50)
         // SSD: post-filled from remaining budget — needs cheap SSDs (128GB at 270) in pool.
         // 37 total SSDs; LIMIT 40 captures all of them regardless of perSlot ceiling.
         if (type === 'ssd') return fetchCandidates(DB, type, perSlot, blockedIds, 40)
-        // Core types: equal per-slot ceiling derived from engine config
-        return fetchCandidates(DB, type, perSlot, blockedIds, 20)
+        // Core types (cpu, mb, ram): top-15 expensive for quality builds.
+        return fetchCandidates(DB, type, perSlot, blockedIds, 15)
       })
+    ),
+    // Core types bottom-10 cheapest: Athlon(1370) is at CPU pos 88, A320M(1380) at MB pos 243,
+    // DDR4-4G(805) at RAM pos 131 — all far beyond LIMIT 15. Without these, the engine cannot
+    // backtrack to cheap components when GPU consumes most of the budget.
+    Promise.all(
+      coreQueryTypes.map((type) =>
+        fetchCheapestCandidates(DB, type, perSlot, blockedIds, 10),
+      )
     ),
     am4Chain && !excluded['motherboard'] && !mbPinned
       ? fetchCandidatesByAttr(DB, 'motherboard', '$.ram_type', 'DDR4', effectiveMax, blockedIds, 100)
@@ -102,11 +115,11 @@ export default defineEventHandler(async (event) => {
       : Promise.resolve([] as Entity[]),
   ])
 
-  // Deduplicate by entity id — supplemental may overlap with main pool
+  // Deduplicate by entity id — supplemental / cheap pools may overlap with main pool
   const seenIds = new Set<number>()
   const candidates: Entity[] = [
     ...Object.values(pinnedEntities).flat().map((s) => s.entity),
-    ...[...results.flat(), ...suppMbs, ...suppCpus].filter((e) => {
+    ...[...results.flat(), ...cheapResults.flat(), ...suppMbs, ...suppCpus].filter((e) => {
       if (seenIds.has(e.id)) return false
       seenIds.add(e.id)
       return true

@@ -56,6 +56,34 @@ export async function fetchCandidates(
   return results.map(rowToEntity)
 }
 
+// Fetch bottom-N candidates (cheapest first) — used alongside fetchCandidates to ensure
+// cheap fallback options are always in the pool for tight-budget builds.
+export async function fetchCheapestCandidates(
+  DB: D1Database,
+  type: string,
+  maxCost: number,
+  blockedIds: number[],
+  limit = 10,
+): Promise<Entity[]> {
+  let sql = `
+    SELECT id, uuid, entity_type, code, name, status, unit_cost, attributes
+    FROM entities
+    WHERE entity_type = ? AND status = 'published' AND unit_cost <= ?
+  `
+  const params: unknown[] = [type, maxCost]
+
+  if (blockedIds.length > 0) {
+    sql += ` AND id NOT IN (${blockedIds.map(() => '?').join(',')})`
+    params.push(...blockedIds)
+  }
+
+  sql += ` ORDER BY unit_cost ASC LIMIT ?`
+  params.push(limit)
+
+  const { results } = await DB.prepare(sql).bind(...params).all<Record<string, unknown>>()
+  return results.map(rowToEntity)
+}
+
 // Fetch ALL candidates within budget for the picker UI — no LIMIT so pairwise
 // filtering never silently drops compatible options that sit beyond position N.
 // Ordered cheapest-first so the picker shows affordable options at the top.

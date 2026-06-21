@@ -281,8 +281,21 @@ function tryFillPackage(
   const capacityType: string = cfg.capacityType ?? cfg.fillOrder[cfg.fillOrder.length - 1]!
   const selectionOrder = cfg.selectionOrder ?? cfg.fillOrder.filter((t) => t !== anchorType)
 
+  // Reserve the minimum cost of phase-1 postFill types (e.g. SSD) before running the
+  // main backtrack so those types are guaranteed budget. The reservation is passed as a
+  // reduced backtrack ceiling; after backtrack we restore it via the original budgetAfterAnchor
+  // so `remaining` correctly includes the reserved amount for postFill to spend.
+  const minPostFillReserve = (cfg.postFillTypes ?? [])
+    .filter((pf) => !pf.upgradeExisting && toFill.has(pf.type))
+    .reduce((reserve, pf) => {
+      const cheapest = available
+        .filter((e) => e.entity_type === pf.type)
+        .reduce((min, e) => Math.min(min, unitCost(e, cfg)), Infinity)
+      return reserve + (isFinite(cheapest) ? cheapest : 0)
+    }, 0)
+
   const chosen = backtrackFill(
-    selectionOrder, 0, {}, budgetAfterAnchor,
+    selectionOrder, 0, {}, budgetAfterAnchor - minPostFillReserve,
     context, anchorCtx, tierCondsPerType, available, rules, cfg, toFill, capacityFactor, capacityType,
   )
 
