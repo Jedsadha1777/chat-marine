@@ -29,7 +29,6 @@ export function useSimulation() {
   )
   const blockedIds = reactive<Set<number>>(new Set())
 
-  // ── Serialised request body (watched by useAsyncData) ────────────────────
   const requestBody = computed(() => ({
     budget: budget.value,
     pinned: Object.fromEntries(
@@ -42,9 +41,7 @@ export function useSimulation() {
     blockedIds: [...blockedIds],
   }))
 
-  // ── Suggestion API call ────────────────────────────────────────────────────
-  // Server runs engine + validation in one request.
-  // No client-side engine, no client-side cache — fresh per call.
+  // No client-side engine or cache — server re-runs both on every call.
   const { data: _apiData, refresh: _refresh } = useAsyncData(
     'suggestion',
     () => $fetch('/api/suggest', { method: 'POST', body: requestBody.value }),
@@ -56,7 +53,6 @@ export function useSimulation() {
     _debounce = setTimeout(() => _refresh(), 400)
   }, { deep: true })
 
-  // ── Derived state ─────────────────────────────────────────────────────────
   const suggestion = computed((): Record<EntityType, SlotItem[]> => {
     const slots = (_apiData.value as { slots?: Record<string, SlotItem[]> })?.slots
     if (!slots) return emptySlots()
@@ -79,11 +75,7 @@ export function useSimulation() {
     budget.value ? (totalCost.value / budget.value) * 100 : 0,
   )
 
-  // ── Picker: compatible entities ────────────────────────────────────────────
-  // Calls /api/compatible with current context entities — server filters by D1.
-  // Only PINNED items constrain the picker, not auto-suggested ones.
-  // This lets user switch CPU from Intel→AMD even when the engine auto-picked
-  // an Intel MB — the engine will replace the MB automatically after selection.
+  // Only pinned items constrain the picker — auto-suggested items don't block switching.
   async function compatibleEntitiesFor(type: EntityType): Promise<Entity[]> {
     const currentEntityIds = ENTITY_TYPES
       .filter((t) => t !== type && !excluded[t])
@@ -101,7 +93,6 @@ export function useSimulation() {
     })
   }
 
-  // ── Slot helpers ──────────────────────────────────────────────────────────
   function slotLimit(type: EntityType): number {
     if (type !== 'ram') return 1
     const srcItems = suggestion.value['motherboard']
@@ -132,7 +123,6 @@ export function useSimulation() {
     return usedModules + Number(entity.attributes[capAttr] ?? 1) <= capacity
   }
 
-  // ── Mutations ─────────────────────────────────────────────────────────────
   function pin(type: EntityType, entity: Entity | null): void {
     pinned[type] = entity ? [{ entity, quantity: 1 }] : []
     excluded[type] = false

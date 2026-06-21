@@ -36,19 +36,12 @@ export interface DomainConfig {
   costAttribute: string
   costPrecision: number
   tierRules?: TierRule[]
-  // The type iterated first (highest-cost anchor). Defaults to fillOrder[0].
   anchorType?: string
-  // Priority order for remaining types after anchor. Defaults to fillOrder minus anchorType.
   selectionOrder?: string[]
-  // The type selected cheapest-adequate (capacity container). Defaults to last in fillOrder.
   capacityType?: string
-  // Attribute on the capacity entity checked against total load. Defaults to 'watt_output'.
   capacityAttribute?: string
-  // Attributes summed to compute load per entity (first non-null wins per entity). Defaults to ['power_draw_w', 'tdp_w'].
   loadAttributes?: string[]
-  // Total load must not exceed this fraction of capacity attribute value. Defaults to 0.8.
   capacityFactor?: number
-  // Types filled after main package using remaining budget, sorted by preferAttribute DESC.
   postFillTypes?: PostFillCfg[]
 }
 
@@ -171,10 +164,6 @@ function totalLoadOf(entities: Entity[], cfg: DomainConfig): number {
   return entities.reduce((sum, e) => sum + entityLoad(e, cfg), 0)
 }
 
-// Generic recursive backtracking fill.
-// Iterates selectionOrder types in priority sequence, trying highest-cost candidates first.
-// capacityType uses cheapest-adequate selection instead of best-first.
-// Returns chosen entity map or null if no valid combination fits within budget.
 function backtrackFill(
   selectionOrder: string[],
   index: number,
@@ -198,7 +187,6 @@ function backtrackFill(
 
   if (!toFill.has(type)) return recurse(chosen, remainingBudget)
 
-  // Capacity type: cheapest that meets the aggregate load requirement
   if (type === capacityType) {
     const loadItems = [...context, ...anchorCtx, ...Object.values(chosen)]
       .filter((e, i, arr) => arr.indexOf(e) === i && e.entity_type !== capacityType)
@@ -207,7 +195,6 @@ function backtrackFill(
     return { ...chosen, [type]: cap }
   }
 
-  // Regular component: pairwise compatibility + soft tier preference (tier-satisfying first, desc cost).
   const allCtx = [...context, ...anchorCtx, ...Object.values(chosen)]
   const tierConds: Array<Record<string, unknown>> = tierCondsPerType[type] ?? []
   const pairwiseOk = available.filter((e) =>
@@ -215,9 +202,7 @@ function backtrackFill(
   )
   const satisfiesTier = (e: Entity): boolean =>
     tierConds.every((c: Record<string, unknown>) => evalLogic(c, { attributes: e.attributes }))
-  // If this type has a capacity_attribute (e.g. RAM modules), prefer higher-capacity
-  // units first so kits (modules=2) are tried before individual sticks (modules=1).
-  // Within the same module count, sort by descending unit cost as usual.
+  // RAM kits (modules=2) tried before individual sticks — higher capacity_attribute value wins first.
   const capAttrKey = cfg.dynamicMaxPerType[type]?.capacity_attribute
   const byPreference = (a: Entity, b: Entity): number => {
     if (capAttrKey) {
@@ -241,9 +226,6 @@ function backtrackFill(
   return null
 }
 
-// Fills types in toFill for a given anchor entity.
-// Uses generic recursive backtracking driven by cfg.selectionOrder.
-// Priority: highest-cost candidate first; capacityType always cheapest adequate.
 function tryFillPackage(
   anchorEntity: Entity | null,
   context: Entity[],
@@ -269,7 +251,6 @@ function tryFillPackage(
 
   const anchorCtx: Entity[] = resolvedAnchor ? [resolvedAnchor] : []
 
-  // Build tier conditions per entity type driven by anchor (data-driven via tierRules config)
   const tierCondsPerType: Record<string, Array<Record<string, unknown>>> = {}
   if (resolvedAnchor) {
     for (const type of cfg.entityTypes) {
@@ -281,10 +262,7 @@ function tryFillPackage(
   const capacityType: string = cfg.capacityType ?? cfg.fillOrder[cfg.fillOrder.length - 1]!
   const selectionOrder = cfg.selectionOrder ?? cfg.fillOrder.filter((t) => t !== anchorType)
 
-  // Reserve the minimum cost of phase-1 postFill types (e.g. SSD) before running the
-  // main backtrack so those types are guaranteed budget. The reservation is passed as a
-  // reduced backtrack ceiling; after backtrack we restore it via the original budgetAfterAnchor
-  // so `remaining` correctly includes the reserved amount for postFill to spend.
+  // Reduce backtrack budget by cheapest postFill costs so SSD always has room; restored in `remaining`.
   const minPostFillReserve = (cfg.postFillTypes ?? [])
     .filter((pf) => !pf.upgradeExisting && toFill.has(pf.type))
     .reduce((reserve, pf) => {
@@ -309,8 +287,6 @@ function tryFillPackage(
 
   const capAttr = cfg.capacityAttribute ?? 'watt_output'
 
-  // Phase 1 post-fill: optional types (SSD ≤512GB) BEFORE RAM x2 — guarantees at least 1 SSD.
-  // Sorted DESC by preferAttribute → biggest-within-cap wins; fallback to smaller if budget tight.
   const postFilled: Record<string, SlotItem[]> = {}
   const allCtxForPost = [...context, ...anchorCtx, ...Object.values(chosen)]
     .filter((e, i, arr) => arr.indexOf(e) === i)
@@ -343,9 +319,6 @@ function tryFillPackage(
     }
   }
 
-  // Post-backtrack slot fill: use dynamicMaxPerType to fill remaining capacity slots.
-  // After backtrack picks 1 unit, try adding more if the source entity has spare slots and budget allows.
-  // Capacity entity is re-evaluated if extra load exceeds current capacity.
   for (const [type, dynCfg] of Object.entries(cfg.dynamicMaxPerType) as [string, DynamicMaxCfg][]) {
     if (!dynCfg || !toFill.has(type) || !chosen[type]) continue
 
@@ -396,9 +369,6 @@ function tryFillPackage(
     }
   }
 
-  // Phase 3 post-fill: upgrade pass (SSD ≥1TB) AFTER RAM x2 — RAM gets budget priority.
-  // Sorted ASC by preferAttribute → smallest step-up wins (1TB before 2TB).
-  // If type was already picked in phase 1, only pay the cost difference.
   for (const { type, preferAttribute, maxAttrValue, minAttrValue, upgradeExisting } of cfg.postFillTypes ?? []) {
     if (!upgradeExisting) continue
     if (!toFill.has(type)) continue
@@ -431,7 +401,6 @@ function tryFillPackage(
     }
   }
 
-  // Assemble result slots
   const pkg: Record<string, SlotItem[]> = {}
   if (toFill.has(anchorType) && anchorEntity) pkg[anchorType] = [{ entity: anchorEntity, quantity: 1 }]
   for (const [type, entity] of Object.entries(chosen)) {
@@ -459,7 +428,6 @@ function specChainFill(
   const { budget, pinned, excluded, blockedIds } = input
   const result = emptySlots(cfg)
 
-  // Apply pinned items and compute spent-so-far
   let pinnedCost = 0
   for (const type of cfg.entityTypes) {
     if (!excluded[type]) {
@@ -469,27 +437,21 @@ function specChainFill(
   }
   const effectiveBudget = budget - pinnedCost
 
-  // Available pool: published & not blocked
   const available = entities.filter((e) => e.status === 'published' && !blockedIds.has(e.id))
-
-  // Context: pinned entities (for pairwise compat checks)
   const pinnedEntities = Object.values(result).flatMap((arr) => arr.map((s) => s.entity))
 
   const capacityFactor = cfg.capacityFactor ?? 0.8
   const anchorType: string = cfg.anchorType ?? cfg.fillOrder[0]!
 
-  // Types that still need filling
   const toFill = new Set(cfg.entityTypes.filter((t) => !excluded[t] && (result[t] ?? []).length === 0))
 
   if (!toFill.has(anchorType)) {
-    // Anchor is pinned or excluded — fill remaining types directly
     const anchorEntity = excluded[anchorType] ? null : (result[anchorType]?.[0]?.entity ?? null)
     const pkg = tryFillPackage(anchorEntity, pinnedEntities, available, rules, cfg, effectiveBudget, capacityFactor, toFill)
     if (pkg) Object.assign(result, pkg)
     return result
   }
 
-  // Iterate anchor candidates (highest cost first), then try without anchor
   const anchorCandidates = available
     .filter((e) => e.entity_type === anchorType)
     .sort((a, b) => unitCost(b, cfg) - unitCost(a, cfg))
@@ -502,7 +464,6 @@ function specChainFill(
     }
   }
 
-  // No anchor package fits — try without anchor
   const noAnchorFill = new Set([...toFill].filter((t) => t !== anchorType))
   const pkg = tryFillPackage(null, pinnedEntities, available, rules, cfg, effectiveBudget, capacityFactor, noAnchorFill)
   if (pkg) Object.assign(result, pkg)

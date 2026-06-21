@@ -101,10 +101,6 @@ const CPU_HIGH_CACHE: Entity = {
   attributes: { socket: 'LGA1700', cores: 24, l3_cache_mb: 36, tdp_w: 253, pcie_version: '5.0', unit_cost: 15000 },
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  SECTION 1 — GPU-first spec-chain property
-// ══════════════════════════════════════════════════════════════════════════════
-
 console.log('\n── GPU-first spec-chain property ──')
 
 const gpuFirst = buildSuggestion(
@@ -115,7 +111,6 @@ assert((gpuFirst.slots['gpu'] ?? []).length > 0, 'spec-chain: GPU present (not r
 const ramQty = (gpuFirst.slots['ram'] ?? []).reduce((s, i) => s + i.quantity, 0)
 assert(ramQty <= 1, 'spec-chain: RAM qty ≤ 1 (minimum adequate — not inflated)', `got ${ramQty}`)
 
-// budget too tight → no GPU, but total within budget
 const tiny = buildSuggestion(
   [RTX4090_ENTITY, CPU_LOW_CACHE, ...BASE_SUPPORT],
   RULES, CFG, { budget: 5_000 },
@@ -124,13 +119,8 @@ const tinyTotal = Object.values(tiny.slots).flatMap(s => s)
   .reduce((sum, s) => sum + Number(s.entity.attributes['unit_cost'] ?? 0) * s.quantity, 0)
 assert(tinyTotal <= 5_000, 'budget 5k: total ≤ budget', `got ${tinyTotal}`)
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  SECTION 2 — TierRule as soft preference (not hard requirement)
-// ══════════════════════════════════════════════════════════════════════════════
-
 console.log('\n── TierRule enforcement ──')
 
-// Case A: RTX4090 + only low-cache CPU → tier preference unfulfilled but GPU still selected (soft rule)
 const tierEntitiesA: Entity[] = [RTX4090_ENTITY, CPU_LOW_CACHE, ...BASE_SUPPORT]
 const tierResultA = buildSuggestion(tierEntitiesA, RULES, CFG, { budget: 200_000 })
 const tierGpuA = (tierResultA.slots['gpu'] ?? [])[0]?.entity.code ?? 'NONE'
@@ -147,7 +137,6 @@ assert(
   `got CPU=${tierCpuA}`,
 )
 
-// Case B: RTX4090 + only high-cache CPU → tier rule satisfied, RTX4090 selected
 const tierEntitiesB: Entity[] = [RTX4090_ENTITY, CPU_HIGH_CACHE, ...BASE_SUPPORT]
 const tierResultB = buildSuggestion(tierEntitiesB, RULES, CFG, { budget: 200_000 })
 const tierGpuB = (tierResultB.slots['gpu'] ?? [])[0]?.entity.code ?? 'NONE'
@@ -158,7 +147,6 @@ assert(
   `got GPU=${tierGpuB}`,
 )
 
-// Case C: RTX4090 + RTX4070 + both CPUs → engine picks RTX4090 (higher tier) with high-cache CPU
 const tierEntitiesC: Entity[] = [RTX4090_ENTITY, RTX4070_ENTITY, CPU_LOW_CACHE, CPU_HIGH_CACHE, ...BASE_SUPPORT]
 const tierResultC = buildSuggestion(tierEntitiesC, RULES, CFG, { budget: 200_000 })
 const tierGpuC = (tierResultC.slots['gpu'] ?? [])[0]?.entity.code ?? 'NONE'
@@ -175,7 +163,6 @@ assert(
   `got CPU=${tierCpuC}`,
 )
 
-// Case D: RTX4090 + RTX4070 + low-cache CPU → RTX4090 still wins (tier is soft, not a blocker)
 const tierEntitiesD: Entity[] = [RTX4090_ENTITY, RTX4070_ENTITY, CPU_LOW_CACHE, ...BASE_SUPPORT]
 const tierResultD = buildSuggestion(tierEntitiesD, RULES, CFG, { budget: 200_000 })
 const tierGpuD = (tierResultD.slots['gpu'] ?? [])[0]?.entity.code ?? 'NONE'
@@ -191,21 +178,6 @@ assert(
   'tierRule D: low-cache CPU used as fallback (no high-cache CPU in pool)',
   `got CPU=${tierCpuD}`,
 )
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  SECTION 3 — DDR4 candidate pool selection (server-layer bug reproduction)
-// ══════════════════════════════════════════════════════════════════════════════
-//
-// Bug in suggest.post.ts: typeBudget = budget × TYPE_RATIO
-//   budget=50000, MB ratio=0.15 → typeBudget=7500
-//   Top-20 MBs within 7500 (ORDER BY unit_cost DESC) are ALL DDR5 (AM5/LGA1851/LGA1700+DDR5)
-//   DDR4 MBs appear at position 67+ → cut off by LIMIT 20 → absent from engine pool
-//   Engine's pairwise RAM_TYPE_MATCH rejects all DDR5 MBs when DDR4 RAM is pinned → empty build
-//
-// Fix in suggest.post.ts: effectiveBudget = budget − pinnedCost for non-PSU types
-//   GPU(21920)+RAM(1860) pinned → effectiveBudget=26220 → MB typeBudget=3933
-//   At 3933 ceiling, only ~16 DDR5 boards fit → LGA1700+DDR4 boards appear at positions 11&17
-//   Engine finds LGA1700 CPU + LGA1700+DDR4 MB + DDR4 RAM → valid pairwise chain
 
 console.log('\n── DDR4 pin + GPU: effectiveBudget candidate selection (server bug) ──')
 
@@ -255,8 +227,6 @@ const ddr4PinnedInput = {
   },
 }
 
-// Case A: DDR5-only pool — reproduces bug (what the BUGGY server sends: typeBudget=7500, all top-20 DDR5)
-// Engine correctly rejects all DDR5 MBs via pairwise RAM_TYPE_MATCH → empty MB slot
 const ddr4BugPool: Entity[] = [GPU_5070_ENTITY, DDR4_RAM_ENTITY, CPU_LGA1700_MID, MB_LGA1700_DDR5_ONLY, PSU_1000W_ENTITY]
 const ddr4BugResult = buildSuggestion(ddr4BugPool, RULES, CFG, ddr4PinnedInput)
 const bugMbSlots = ddr4BugResult.slots['motherboard'] ?? []
@@ -267,8 +237,6 @@ assert(
   `got MB=${bugMbSlots.map(s => s.entity.code)}`,
 )
 
-// Case B: DDR4 MB added — simulates FIXED server (effectiveBudget lowers MB typeBudget: 7500→3933)
-// At 3933 ceiling, LGA1700+DDR4 boards enter the top-20 pool → engine finds compatible MB
 const ddr4FixPool: Entity[] = [GPU_5070_ENTITY, DDR4_RAM_ENTITY, CPU_LGA1700_MID, MB_LGA1700_DDR5_ONLY, MB_LGA1700_DDR4, PSU_1000W_ENTITY]
 const ddr4FixResult = buildSuggestion(ddr4FixPool, RULES, CFG, ddr4PinnedInput)
 const fixMbSlots = ddr4FixResult.slots['motherboard'] ?? []

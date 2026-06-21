@@ -1,20 +1,3 @@
-/**
- * Integration tests for suggest.post.ts candidate pool selection.
- *
- * These tests simulate the server's selectCandidates logic (perSlot approach)
- * using real seed entities and verify that buildSuggestion produces valid builds
- * across all key pin + budget scenarios.
- *
- * selectCandidates mirrors the exact logic in suggest.post.ts:
- *   - perSlot = effectiveMax / numCoreFilledTypes  (no hardcoded ratio numbers)
- *   - anchor (gpu): effectiveMax ceiling, LIMIT 60  (LIMIT 20 only reached RTX5070+ at 30k)
- *   - capacity (psu): maxCost ceiling, LIMIT 50  (position 41 = cheapest 1000W)
- *   - ssd: perSlot ceiling, LIMIT 40  (covers all 37 SSDs)
- *   - core types (cpu/mb/ram): top-15 expensive + bottom-10 cheapest within perSlot ceiling
- *   - supplemental DDR4 MB when am4Chain: LIMIT 100 (covers all 59 DDR4 boards)
- *   - supplemental LGA1700 CPU when DDR5 RAM pinned: LIMIT 30 (all 26 LGA1700)
- */
-
 import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -97,9 +80,6 @@ function loadSeedEntities(): Entity[] {
 const ALL_ENTITIES = loadSeedEntities()
 console.log(`Loaded ${ALL_ENTITIES.length} seed entities\n`)
 
-// ── selectCandidates: mirrors suggest.post.ts logic ───────────────────────────
-// This is the NEW architecture: perSlot from engine config, no hardcoded ratios.
-
 function topN(type: string, ceiling: number, n: number): Entity[] {
   return ALL_ENTITIES
     .filter(e =>
@@ -122,18 +102,6 @@ function bottomN(type: string, ceiling: number, n: number): Entity[] {
     .slice(0, n)
 }
 
-function topNByAttr(type: string, attrKey: string, attrVal: string, ceiling: number, n: number): Entity[] {
-  return ALL_ENTITIES
-    .filter(e => {
-      if (e.entity_type !== type || e.status !== 'published') return false
-      if (Number(e.attributes.unit_cost) > ceiling) return false
-      const val = e.attributes[attrKey]
-      return Array.isArray(val) ? val.includes(attrVal) : val === attrVal
-    })
-    .sort((a, b) => Number(b.attributes.unit_cost) - Number(a.attributes.unit_cost))
-    .slice(0, n)
-}
-
 function selectCandidates(
   budget: number,
   pinnedEntities: Record<string, SlotItem[]>,
@@ -148,61 +116,25 @@ function selectCandidates(
     .reduce((sum, s) => sum + Number(s.entity.attributes.unit_cost ?? 0) * s.quantity, 0)
   const effectiveMax = Math.max(0, budget - pinnedCostTotal)
 
-  // Core types from engine config (excludes anchor and capacity)
   const coreTypes       = ENTITY_TYPES.filter(t => t !== anchorType && t !== capacityType)
-  // Types the engine will fill: non-pinned, non-excluded core types
   const coreFilledTypes = coreTypes.filter(t =>
     !excluded[t] && (pinnedEntities[t]?.length ?? 0) === 0,
   )
-  // Per-slot ceiling: effectiveMax split equally across all slots to fill.
-  // Sum of all slot ceilings = effectiveMax → SSD always has room in budget.
   const perSlot = coreFilledTypes.length > 0
     ? Math.round(effectiveMax / coreFilledTypes.length)
     : effectiveMax
 
-  // Compatibility signals from pinned items
-  const pinnedRamType   = pinnedEntities['ram']?.[0]?.entity.attributes['ram_type'] as string | undefined
-  const pinnedCpuSocket = pinnedEntities['cpu']?.[0]?.entity.attributes['socket'] as string | undefined
-  const pinnedMbSocket  = pinnedEntities['motherboard']?.[0]?.entity.attributes['socket'] as string | undefined
-  const mbPinned  = (pinnedEntities['motherboard']?.length ?? 0) > 0
-  const cpuPinned = (pinnedEntities['cpu']?.length ?? 0) > 0
-
-  // am4Chain: DDR4/AM4 pinned → supplement with DDR4 MBs at all price points
-  const am4Chain = pinnedRamType === 'DDR4' || pinnedCpuSocket === 'AM4' || pinnedMbSocket === 'AM4'
-  // DDR5 RAM pinned → supplement with LGA1700 CPUs for tight-budget builds
-  const needSuppLga1700Cpu = pinnedRamType === 'DDR5'
-
-  // Main pool
   const mainPool: Entity[] = ENTITY_TYPES.flatMap(type => {
     if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return []
-    // GPU: LIMIT 60. At 30k top-20 are all RTX5070+ (23k+) leaving no room for other parts;
-    // LIMIT 60 reaches affordable GPUs (~14k-22k) that actually fit the budget.
     if (type === anchorType)   return topN(type, effectiveMax, 60)
-    // PSU: full budget ceiling, LIMIT 50 — cheapest 1000W PSU is at position 41 DESC.
     if (type === capacityType) return topN(type, maxCost, 50)
-    // SSD: post-filled from remaining budget; LIMIT 40 covers all 37 SSDs.
-    if (type === 'ssd')        return topN(type, perSlot, 40)
-    // CPU/MB/RAM: top-15 expensive + bottom-10 cheapest.
-    // Cheap items (Athlon at CPU pos 88, A320M at MB pos 243, DDR4-4G at RAM pos 131)
-    // are far beyond LIMIT 15 DESC; bottomN guarantees they're always in the pool.
     return [...topN(type, perSlot, 15), ...bottomN(type, perSlot, 10)]
   })
 
-  // Supplemental: DDR4 MBs covering all 59 DDR4 boards (cheapest at position 59)
-  const suppMbs: Entity[] = am4Chain && !excluded['motherboard'] && !mbPinned
-    ? topNByAttr('motherboard', 'ram_type', 'DDR4', effectiveMax, 100)
-    : []
-
-  // Supplemental: LGA1700 CPUs covering all 26 boards
-  const suppCpus: Entity[] = needSuppLga1700Cpu && !excluded['cpu'] && !cpuPinned
-    ? topNByAttr('cpu', 'socket', 'LGA1700', effectiveMax, 30)
-    : []
-
-  // Deduplicate by entity id
   const seenIds = new Set<number>()
   return [
     ...Object.values(pinnedEntities).flat().map(s => s.entity),
-    ...[...mainPool, ...suppMbs, ...suppCpus].filter(e => {
+    ...mainPool.filter(e => {
       if (seenIds.has(e.id)) return false
       seenIds.add(e.id)
       return true
@@ -218,7 +150,6 @@ function byId(id: number): Entity {
   return e
 }
 
-// Seed entities used in tests (verified against seed.sql):
 const GPU_5070     = byId(607)  // RTX 5070 ZOTAC, 21920, 650W
 const RAM_DDR4_32G = byId(180)  // DDR4 32GB BLACKBERRY, 5800, modules=2
 const RAM_DDR4_4G  = byId(304)  // DDR4 4GB HYNIX, 805, modules=1
@@ -475,7 +406,6 @@ for (const budget of [50_000, 40_000, 30_000]) {
   assert(hasMb,           `8 no-pin@${budget/1000}k: MB present`)
   assert(hasPsu,          `8 no-pin@${budget/1000}k: PSU present`)
   assert(hasSsd,          `8 no-pin@${budget/1000}k: SSD present`)
-  // RAM type and MB type must match (pairwise rule)
   if (mbRt && ramRt) {
     const mbRts: string[] = Array.isArray(mbRt) ? mbRt : [mbRt]
     assert(mbRts.includes(String(ramRt)), `8 no-pin@${budget/1000}k: MB.ram_type includes RAM.ram_type`, `MB=${mbRts} RAM=${ramRt}`)

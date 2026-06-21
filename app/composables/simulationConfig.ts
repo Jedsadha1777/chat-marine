@@ -6,7 +6,6 @@ import { TIER_RULES } from '~/composables/tierRules'
 // BOM display order — SSD shown above PSU
 export const FILL_ORDER: EntityType[] = ['gpu', 'cpu', 'motherboard', 'ram', 'ssd', 'psu']
 
-// Hard max per slot type (undefined = unlimited)
 export const MAX_PER_TYPE: Partial<Record<EntityType, number>> = {
   gpu:         1,
   cpu:         1,
@@ -15,7 +14,6 @@ export const MAX_PER_TYPE: Partial<Record<EntityType, number>> = {
   ssd:         1,
 }
 
-// Dynamic limit sourced from another entity's attribute
 export const DYNAMIC_MAX_PER_TYPE: Partial<Record<EntityType, {
   source_type:        EntityType
   source_attribute:   string
@@ -30,9 +28,7 @@ export const DYNAMIC_MAX_PER_TYPE: Partial<Record<EntityType, {
   },
 }
 
-// Post-fill types: filled after main package (anchor+core) using remaining budget.
-// Phase 1 (no upgradeExisting): runs BEFORE RAM x2 — guarantees at least 1 SSD.
-// Phase 3 (upgradeExisting: true): runs AFTER RAM x2 — upgrades only if budget remains.
+// Phase 1 runs before RAM x2 (guarantees at least 1 SSD); phase 3 runs after (upgrade only).
 export const POST_FILL_TYPES: Array<{
   type: EntityType
   preferAttribute: string
@@ -44,23 +40,18 @@ export const POST_FILL_TYPES: Array<{
   { type: 'ssd', preferAttribute: 'capacity_gb', minAttrValue: 1000, upgradeExisting: true },
 ]
 
-// Slots that need aggregate rule check (capacity containers)
 export const AGGREGATE_GUARD_TYPES: EntityType[] = ['psu', 'ram']
 
-// Rule codes used for power-draw display in UI
 export const AGGREGATE_DISPLAY: { primary: string; safety: string | null } = {
   primary: 'AGG_POWER_CAPACITY',
   safety:  'AGG_POWER_SAFETY',
 }
 
-// Types required in every valid build
 export const REQUIRED_TYPES: EntityType[] = ['cpu', 'motherboard', 'ram', 'psu']
 
-// Engine selection priority (non-GPU components). Order = budget allocation priority.
-// RAM first → maximize capacity; then CPU quality; then MB quality; PSU always cheapest adequate.
+// RAM before CPU/MB so the engine maximises memory capacity before spending on silicon.
 export const SELECTION_ORDER: EntityType[] = ['ram', 'cpu', 'motherboard', 'psu']
 
-// Safety factor — total load must not exceed this fraction of capacity entity's capacity attribute
 export const CAPACITY_FACTOR = 0.8
 
 export const COST_ATTRIBUTE = 'unit_cost'

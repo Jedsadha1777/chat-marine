@@ -1,6 +1,4 @@
-// ═════════════════════════════════════════════════════════════════
-//  TOKEN
-// ═════════════════════════════════════════════════════════════════
+// ── TOKEN ────────────────────────────────────────────────────────
 
 const enum TT {
   TEXT, VAR, PIPE, FILTER_NAME,
@@ -9,9 +7,7 @@ const enum TT {
 
 interface Token { type: TT; value: string; position: number }
 
-// ═════════════════════════════════════════════════════════════════
-//  AST NODES
-// ═════════════════════════════════════════════════════════════════
+// ── AST NODES ────────────────────────────────────────────────────
 
 export interface FilterArg  { value: string; isVar: boolean }
 export interface FilterNode { name: string;  args: FilterArg[] }
@@ -19,9 +15,7 @@ export interface TextNode   { kind: 'text';  value: string }
 export interface VarNode    { kind: 'var';   path: string; filters: FilterNode[] }
 export interface RootNode   { kind: 'root';  children: (TextNode | VarNode)[] }
 
-// ═════════════════════════════════════════════════════════════════
-//  LEXER
-// ═════════════════════════════════════════════════════════════════
+// ── LEXER ────────────────────────────────────────────────────────
 
 const WORD_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-'
 const VAR_START  = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_'
@@ -71,7 +65,6 @@ class Lexer {
 
     tokens.push({ type: TT.VAR, value: varName, position: varStart })
 
-    // filter chain with backtrack
     while (this.pos < this.length) {
       const saved = this.pos
       this.skipSpaces()
@@ -177,9 +170,7 @@ class Lexer {
   private isVarStart(ch: string): boolean { return ch !== '' && VAR_START.includes(ch) }
 }
 
-// ═════════════════════════════════════════════════════════════════
-//  PARSER  (Tokens → AST)
-// ═════════════════════════════════════════════════════════════════
+// ── PARSER ───────────────────────────────────────────────────────
 
 class Parser {
   private tokens: Token[] = []
@@ -243,9 +234,7 @@ class Parser {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════
-//  FILTER REGISTRY
-// ═════════════════════════════════════════════════════════════════
+// ── FILTER REGISTRY ──────────────────────────────────────────────
 
 type FilterFn = (value: unknown, ...args: string[]) => unknown
 
@@ -370,9 +359,7 @@ class FilterRegistry {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════
-//  EVALUATOR  (AST Walker)
-// ═════════════════════════════════════════════════════════════════
+// ── EVALUATOR ────────────────────────────────────────────────────
 
 class Evaluator {
   private flat: Record<string, unknown> = {}
@@ -441,9 +428,7 @@ class Evaluator {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════
-//  TEMPLATE ENGINE  (Facade — singleton, cached AST)
-// ═════════════════════════════════════════════════════════════════
+// ── TEMPLATE ENGINE ──────────────────────────────────────────────
 
 const _parser    = new Parser()
 const _registry  = new FilterRegistry()
