@@ -49,8 +49,8 @@ export const AGGREGATE_DISPLAY: { primary: string; safety: string | null } = {
 
 export const REQUIRED_TYPES: EntityType[] = ['cpu', 'motherboard', 'ram', 'psu']
 
-// RAM before CPU/MB so the engine maximises memory capacity before spending on silicon.
-export const SELECTION_ORDER: EntityType[] = ['ram', 'cpu', 'motherboard', 'psu']
+// CPU → RAM → MB so MB adapts to whichever RAM wins (DDR5 kit or DDR4), not the other way round.
+export const SELECTION_ORDER: EntityType[] = ['cpu', 'ram', 'motherboard', 'psu']
 
 export const CAPACITY_FACTOR = 0.8
 

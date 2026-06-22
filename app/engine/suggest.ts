@@ -211,9 +211,15 @@ function backtrackFill(
     }
     return unitCost(b, cfg) - unitCost(a, cfg)
   }
+  // Each non-capacity type gets an equal share of remaining budget — tried first; over-share as fallback.
+  const remainingSlots = selectionOrder.slice(index).filter(t => toFill.has(t) && t !== capacityType).length
+  const shareMax = remainingSlots > 0 ? Math.floor(remainingBudget / remainingSlots) : remainingBudget
+  const inShare  = (e: Entity) => unitCost(e, cfg) <= shareMax
   const candidates = [
-    ...pairwiseOk.filter(satisfiesTier).sort(byPreference),
-    ...pairwiseOk.filter((e) => !satisfiesTier(e)).sort(byPreference),
+    ...pairwiseOk.filter(e => inShare(e)  && satisfiesTier(e)).sort(byPreference),
+    ...pairwiseOk.filter(e => inShare(e)  && !satisfiesTier(e)).sort(byPreference),
+    ...pairwiseOk.filter(e => !inShare(e) && satisfiesTier(e)).sort(byPreference),
+    ...pairwiseOk.filter(e => !inShare(e) && !satisfiesTier(e)).sort(byPreference),
   ]
 
   for (const candidate of candidates) {
