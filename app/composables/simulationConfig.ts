@@ -18,12 +18,14 @@ export const DYNAMIC_MAX_PER_TYPE: Partial<Record<EntityType, {
   source_type:        EntityType
   source_attribute:   string
   capacity_attribute?: string
+  sort_attribute?:    string
   fallback:           number
 }>> = {
   ram: {
     source_type:        'motherboard',
     source_attribute:   'ram_slots',
     capacity_attribute: 'modules',
+    sort_attribute:     'capacity_gb',
     fallback:           2,
   },
 }

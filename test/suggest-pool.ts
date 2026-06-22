@@ -386,7 +386,7 @@ console.log('\n── AM4 CPU pin scenarios (supplemental DDR4 MB) ──')
 
 console.log('\n── no-pin budget sweep ──')
 
-for (const budget of [90_000, 80_000, 50_000, 40_000, 30_000]) {
+for (const budget of [90_000, 80_000, 60_000, 50_000, 40_000, 30_000]) {
   const candidates = selectCandidates(budget, {})
   const result = buildSuggestion(candidates, RULES, CFG, { budget })
   const total  = totalCostOf(result.slots, CFG)

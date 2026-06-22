@@ -13,6 +13,7 @@ export interface DynamicMaxCfg {
   source_type: string
   source_attribute: string
   capacity_attribute?: string
+  sort_attribute?: string   // preferred sort key (e.g. capacity_gb); falls back to capacity_attribute
   fallback: number
 }
 
@@ -202,9 +203,14 @@ function backtrackFill(
   )
   const satisfiesTier = (e: Entity): boolean =>
     tierConds.every((c: Record<string, unknown>) => evalLogic(c, { attributes: e.attributes }))
-  // RAM kits (modules=2) tried before individual sticks — higher capacity_attribute value wins first.
-  const capAttrKey = cfg.dynamicMaxPerType[type]?.capacity_attribute
+  // Sort by sort_attribute (e.g. capacity_gb) desc first, then capacity_attribute (e.g. modules) desc, then cost.
+  const sortAttrKey = cfg.dynamicMaxPerType[type]?.sort_attribute
+  const capAttrKey  = cfg.dynamicMaxPerType[type]?.capacity_attribute
   const byPreference = (a: Entity, b: Entity): number => {
+    if (sortAttrKey) {
+      const diff = Number(b.attributes[sortAttrKey] ?? 0) - Number(a.attributes[sortAttrKey] ?? 0)
+      if (diff !== 0) return diff
+    }
     if (capAttrKey) {
       const diff = Number(b.attributes[capAttrKey] ?? 1) - Number(a.attributes[capAttrKey] ?? 1)
       if (diff !== 0) return diff
