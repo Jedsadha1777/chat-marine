@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
         if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return Promise.resolve([] as Entity[])
         if (type === anchorType) return fetchCandidates(DB, type, effectiveMax, blockedIds, 60)
         if (type === capacityType) return fetchCandidates(DB, type, maxCost, blockedIds, 50)
-        return fetchCandidates(DB, type, perSlot, blockedIds, 15)
+        return fetchCandidates(DB, type, perSlot, blockedIds, 25)
       })
     ),
     anchorFillable
@@ -74,7 +74,7 @@ export default defineEventHandler(async (event) => {
       : Promise.resolve([] as Entity[]),
     Promise.all(
       coreFilledTypes.map((type) =>
-        fetchCheapestCandidates(DB, type, perSlot, blockedIds, 10),
+        fetchCheapestCandidates(DB, type, perSlot, blockedIds, 25),
       )
     ),
   ])

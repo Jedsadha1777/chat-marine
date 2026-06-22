@@ -128,7 +128,7 @@ function selectCandidates(
     if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return []
     if (type === anchorType)   return topN(type, effectiveMax, 60)
     if (type === capacityType) return topN(type, maxCost, 50)
-    return [...topN(type, perSlot, 15), ...bottomN(type, perSlot, 10)]
+    return [...topN(type, perSlot, 25), ...bottomN(type, perSlot, 25)]
   })
 
   const seenIds = new Set<number>()
@@ -386,7 +386,7 @@ console.log('\n── AM4 CPU pin scenarios (supplemental DDR4 MB) ──')
 
 console.log('\n── no-pin budget sweep ──')
 
-for (const budget of [50_000, 40_000, 30_000]) {
+for (const budget of [90_000, 80_000, 50_000, 40_000, 30_000]) {
   const candidates = selectCandidates(budget, {})
   const result = buildSuggestion(candidates, RULES, CFG, { budget })
   const total  = totalCostOf(result.slots, CFG)
@@ -417,6 +417,9 @@ for (const budget of [50_000, 40_000, 30_000]) {
   const anchorTarget = Math.round(budget * Math.ceil(CFG.entityTypes.length / 2) / CFG.entityTypes.length)
   assert(gpuCost <= Math.round(anchorTarget * 1.3), `8 no-pin@${budget/1000}k: GPU near balanced target (≤target×1.3)`, `gpuCost=${gpuCost} target=${anchorTarget}`)
   assert(ramCost >= Math.round(budget * 0.1),       `8 no-pin@${budget/1000}k: RAM cost ≥10% of budget (not bottom-tier)`, `ramCost=${ramCost}`)
+  if (budget >= 80_000) {
+    assert(String(ramRt) === 'DDR5', `8 no-pin@${budget/1000}k: RAM is DDR5 (high-budget build)`, `got ${ramRt}`)
+  }
 }
 
 // ── SECTION 9: pairwise compatibility verification ───────────────────────────
