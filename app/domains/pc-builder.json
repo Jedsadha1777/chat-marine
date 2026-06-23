@@ -35,6 +35,14 @@
   "loadAttributes":      ["power_draw_w", "tdp_w"],
   "capacityFactor":      0.8,
 
+  "fetchLimits": {
+    "anchor":     60,
+    "anchorNear": 20,
+    "capacity":   50,
+    "core":       25,
+    "coreCheap":  25
+  },
+
   "tierRules": [
     {
       "name": "HIGH_BW_GPU_REQUIRES_HIGH_CACHE_CPU",

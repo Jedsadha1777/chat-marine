@@ -1,10 +1,8 @@
 import type { Entity, ValidationIssue, BomItem } from '~/data/types'
 import { ENTITY_TYPES, COST_ATTRIBUTE, COST_PRECISION, type EntityType } from '~/domains'
+import type { SlotItem } from '~/engine/suggest'
 
-export interface SlotItem {
-  entity: Entity
-  quantity: number
-}
+export type { SlotItem }
 
 function unitCost(e: Entity): number {
   const raw = e.attributes[COST_ATTRIBUTE] ?? 0

@@ -45,6 +45,14 @@ export interface PostFillCfg {
   upgradeExisting?: boolean  // phase 3: runs after quantities, replaces prior pick if upgrade affordable
 }
 
+export interface FetchLimits {
+  anchor: number
+  anchorNear: number
+  capacity: number
+  core: number
+  coreCheap: number
+}
+
 export interface DomainConfig {
   fillOrder: string[]
   entityTypes: string[]
@@ -65,6 +73,7 @@ export interface DomainConfig {
   loadAttributes?: string[]
   capacityFactor?: number
   postFillTypes?: PostFillCfg[]
+  fetchLimits?: FetchLimits
 }
 
 export interface SlotItem {

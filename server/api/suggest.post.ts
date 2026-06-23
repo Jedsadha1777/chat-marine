@@ -1,8 +1,7 @@
 import { buildSuggestion, validateItems, aggregateDetailFor, buildBom, totalCostOf, toSimItems } from '~/engine/suggest'
-import { DOMAIN } from '~/domains'
-import { fetchCandidates, fetchCheapestCandidates, fetchByIds } from '../utils/db'
 import type { SlotItem } from '~/engine/suggest'
-import type { Entity } from '~/data/types'
+import { DOMAIN } from '~/domains'
+import { fetchForDomain, fetchByIds } from '../utils/fetchForDomain'
 
 interface SuggestRequest {
   budget: number | null
@@ -14,76 +13,27 @@ interface SuggestRequest {
 export default defineEventHandler(async (event) => {
   const body = await readBody<SuggestRequest>(event)
 
-  const budget: number | null   = body.budget ?? null
-  const pinnedReq               = body.pinned   ?? {}
-  const excluded                = body.excluded  ?? {}
-  const blockedIds: number[]    = body.blockedIds ?? []
+  const budget: number | null = body.budget ?? null
+  const pinnedReq             = body.pinned   ?? {}
+  const excluded              = body.excluded  ?? {}
+  const blockedIds: number[]  = body.blockedIds ?? []
 
   const DB = event.context.cloudflare?.env?.DB
   if (!DB) throw createError({ statusCode: 503, message: 'D1 database not available' })
 
-  const maxCost = budget ?? 999_999_999
-  const pinnedEntities: Record<string, SlotItem[]> = {}
-
   const allPinnedIds = Object.values(pinnedReq).flat().map((p) => p.id)
   const pinnedById = new Map((await fetchByIds(DB, allPinnedIds)).map((e) => [e.id, e]))
 
-  for (const type of DOMAIN.entityTypes) {
-    const items = pinnedReq[type] ?? []
-    pinnedEntities[type] = items.map((p) => ({
-      entity:   pinnedById.get(p.id)!,
-      quantity: p.quantity,
-    })).filter((s) => s.entity != null)
-  }
-
-  const pinnedCostTotal = Object.values(pinnedEntities)
-    .flat()
-    .reduce((sum, s) => sum + Number(s.entity.attributes.unit_cost ?? 0) * s.quantity, 0)
-  const effectiveMax = budget !== null ? Math.max(0, budget - pinnedCostTotal) : 999_999_999
-
-  const anchorType   = DOMAIN.anchorType   ?? 'gpu'
-  const capacityType = DOMAIN.capacityType ?? 'psu'
-
-  const coreTypes = DOMAIN.entityTypes.filter((t) => t !== anchorType && t !== capacityType)
-  const coreFilledTypes = coreTypes.filter((t) =>
-    !excluded[t] && (pinnedEntities[t]?.length ?? 0) === 0,
+  const pinnedEntities: Record<string, SlotItem[]> = Object.fromEntries(
+    DOMAIN.entityTypes.map((type) => [
+      type,
+      (pinnedReq[type] ?? [])
+        .map((p) => ({ entity: pinnedById.get(p.id)!, quantity: p.quantity }))
+        .filter((s) => s.entity != null),
+    ]),
   )
 
-  const perSlot = coreFilledTypes.length > 0
-    ? Math.round(effectiveMax / coreFilledTypes.length)
-    : effectiveMax
-
-  const anchorTarget = Math.round(effectiveMax * Math.ceil(DOMAIN.entityTypes.length / 2) / DOMAIN.entityTypes.length)
-  const anchorFillable = !(excluded[anchorType] || (pinnedEntities[anchorType]?.length ?? 0) > 0)
-
-  const [results, nearTargetResults, cheapResults] = await Promise.all([
-    Promise.all(
-      DOMAIN.entityTypes.map((type) => {
-        if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return Promise.resolve([] as Entity[])
-        if (type === anchorType)   return fetchCandidates(DB, type, effectiveMax, blockedIds, 60)
-        if (type === capacityType) return fetchCandidates(DB, type, maxCost, blockedIds, 50)
-        return fetchCandidates(DB, type, perSlot, blockedIds, 25)
-      })
-    ),
-    anchorFillable
-      ? fetchCandidates(DB, anchorType, anchorTarget, blockedIds, 20)
-      : Promise.resolve([] as Entity[]),
-    Promise.all(
-      coreFilledTypes.map((type) =>
-        fetchCheapestCandidates(DB, type, perSlot, blockedIds, 25),
-      )
-    ),
-  ])
-
-  const seenIds = new Set<number>()
-  const candidates: Entity[] = [
-    ...Object.values(pinnedEntities).flat().map((s) => s.entity),
-    ...[...results.flat(), ...nearTargetResults, ...cheapResults.flat()].filter((e) => {
-      if (seenIds.has(e.id)) return false
-      seenIds.add(e.id)
-      return true
-    }),
-  ]
+  const candidates = await fetchForDomain(DB, DOMAIN, { budget, pinnedEntities, excluded, blockedIds })
 
   const result = buildSuggestion(candidates, DOMAIN, {
     budget,
@@ -92,17 +42,17 @@ export default defineEventHandler(async (event) => {
     blockedIds: new Set(blockedIds),
   })
 
-  const simItems   = toSimItems(result.slots, DOMAIN)
-  const issues     = validateItems(simItems, DOMAIN)
-  const aggDetail  = aggregateDetailFor(simItems, DOMAIN)
+  const simItems  = toSimItems(result.slots, DOMAIN)
+  const issues    = validateItems(simItems, DOMAIN)
+  const aggDetail = aggregateDetailFor(simItems, DOMAIN)
 
-  const isValid    = simItems.length >= 2 && issues.filter((i) => i.severity === 'error').length === 0
-  const bom        = isValid ? buildBom(result.slots, DOMAIN) : []
-  const cost       = totalCostOf(result.slots, DOMAIN)
+  const isValid = simItems.length >= 2 && issues.filter((i) => i.severity === 'error').length === 0
+  const bom     = isValid ? buildBom(result.slots, DOMAIN) : []
+  const cost    = totalCostOf(result.slots, DOMAIN)
 
   return {
-    slots:      result.slots,
-    totalCost:  cost,
+    slots:           result.slots,
+    totalCost:       cost,
     issues,
     bom,
     isValid,
