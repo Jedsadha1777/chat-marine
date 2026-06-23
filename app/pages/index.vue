@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import type { Entity } from '~/data/types'
 import type { SlotItem } from '~/composables/useSimulation'
-import { ENTITY_TYPE_LABELS, type EntityType } from '~/data/entityTypes'
-import { FILL_ORDER, REQUIRED_TYPES } from '~/composables/simulationConfig'
+import { ENTITY_TYPE_LABELS, FILL_ORDER, REQUIRED_TYPES, type EntityType } from '~/domains'
 
 
 const {

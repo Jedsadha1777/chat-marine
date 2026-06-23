@@ -7,7 +7,27 @@ import type {
 } from '~/data/types'
 import { runPairwise, evalLogic } from '~/engine/pairwise'
 import { runAggregate, getAggregateDetail } from '~/engine/aggregate'
-import { getTierConditions, type TierRule } from '~/composables/tierRules'
+
+export interface TierRule {
+  name: string
+  provider: { entity_type: string; condition: Record<string, unknown> }
+  requires: Array<{ entity_type: string; condition: Record<string, unknown> }>
+}
+
+function getTierConditions(
+  provider: Entity,
+  rules: TierRule[],
+  requiredType: string,
+): Record<string, unknown>[] {
+  return rules
+    .filter(r =>
+      r.provider.entity_type === provider.entity_type &&
+      evalLogic(r.provider.condition, { attributes: provider.attributes })
+    )
+    .flatMap(r =>
+      r.requires.filter(req => req.entity_type === requiredType).map(req => req.condition)
+    )
+}
 
 export interface DynamicMaxCfg {
   source_type: string
@@ -36,6 +56,7 @@ export interface DomainConfig {
   requiredTypes: string[]
   costAttribute: string
   costPrecision: number
+  rules: CompatibilityRule[]
   tierRules?: TierRule[]
   anchorType?: string
   selectionOrder?: string[]
@@ -481,7 +502,6 @@ function tryFillPackage(
 
 function specChainFill(
   entities: Entity[],
-  rules: CompatibilityRule[],
   cfg: DomainConfig,
   input: {
     budget: number
@@ -491,6 +511,7 @@ function specChainFill(
   },
 ): Record<string, SlotItem[]> {
   const { budget, pinned, excluded, blockedIds } = input
+  const rules = cfg.rules
   const result = emptySlots(cfg)
 
   let pinnedCost = 0
@@ -542,7 +563,6 @@ function specChainFill(
 
 export function buildSuggestion(
   entities: Entity[],
-  rules: CompatibilityRule[],
   cfg: DomainConfig,
   input: SuggestInput,
 ): SuggestResult {
@@ -554,7 +574,7 @@ export function buildSuggestion(
   ) as Record<string, boolean>
   const blockedIds = new Set(input.blockedIds ?? [])
 
-  const slots = specChainFill(entities, rules, cfg, {
+  const slots = specChainFill(entities, cfg, {
     budget: input.budget ?? Infinity,
     pinned,
     excluded,
@@ -566,10 +586,10 @@ export function buildSuggestion(
 
 export function validateItems(
   items: SimulationItem[],
-  rules: CompatibilityRule[],
   cfg: DomainConfig,
   constraints: Record<string, unknown> = {},
 ): ValidationIssue[] {
+  const rules = cfg.rules
   const result: ValidationIssue[] = []
 
   const presentTypes = new Set(items.map((i) => i.entity.entity_type))
@@ -596,9 +616,9 @@ export function validateItems(
 
 export function aggregateDetailFor(
   items: SimulationItem[],
-  rules: CompatibilityRule[],
   cfg: DomainConfig,
 ): { aggregate_value: number; capacity_value: number; utilization_pct: number } | null {
+  const rules = cfg.rules
   const primaryRule = rules.find((r) => r.code === cfg.aggregateDisplay.primary && r.is_active)
   if (primaryRule) {
     const detail = getAggregateDetail(primaryRule, items, {})

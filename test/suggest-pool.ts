@@ -2,16 +2,8 @@ import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import type { Entity } from '~/data/types'
-import { buildSuggestion, totalCostOf, type DomainConfig, type SlotItem } from '~/engine/suggest'
-import { RULES } from '~/data/rules'
-import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entityTypes'
-import {
-  FILL_ORDER, MAX_PER_TYPE, DYNAMIC_MAX_PER_TYPE,
-  AGGREGATE_GUARD_TYPES, AGGREGATE_DISPLAY, REQUIRED_TYPES,
-  COST_ATTRIBUTE, COST_PRECISION, CAPACITY_FACTOR, SELECTION_ORDER,
-  DEFAULT_DOMAIN_CONFIG,
-} from '~/composables/simulationConfig'
-import { TIER_RULES } from '~/composables/tierRules'
+import { buildSuggestion, totalCostOf, type SlotItem } from '~/engine/suggest'
+import { DOMAIN, ENTITY_TYPES } from '~/domains'
 
 // ── test harness ──────────────────────────────────────────────────────────────
 
@@ -28,28 +20,7 @@ function assert(cond: boolean, label: string, detail = ''): void {
   }
 }
 
-// ── engine config ─────────────────────────────────────────────────────────────
-
-const CFG: DomainConfig = {
-  fillOrder:           [...FILL_ORDER],
-  entityTypes:         [...ENTITY_TYPES],
-  entityTypeLabels:    { ...ENTITY_TYPE_LABELS },
-  maxPerType:          { ...MAX_PER_TYPE },
-  dynamicMaxPerType:   { ...DYNAMIC_MAX_PER_TYPE },
-  aggregateGuardTypes: [...AGGREGATE_GUARD_TYPES],
-  aggregateDisplay:    { ...AGGREGATE_DISPLAY },
-  requiredTypes:       [...REQUIRED_TYPES],
-  costAttribute:       COST_ATTRIBUTE,
-  costPrecision:       COST_PRECISION,
-  tierRules:           [...TIER_RULES],
-  anchorType:          'gpu',
-  capacityType:        'psu',
-  capacityAttribute:   'watt_output',
-  loadAttributes:      ['power_draw_w', 'tdp_w'],
-  capacityFactor:      CAPACITY_FACTOR,
-  selectionOrder:      [...SELECTION_ORDER],
-  postFillTypes:       [...(DEFAULT_DOMAIN_CONFIG.postFillTypes ?? [])],
-}
+const CFG = DOMAIN
 
 // ── load seed entities ────────────────────────────────────────────────────────
 
@@ -180,7 +151,7 @@ console.log('\n── perSlot pool selection: GPU-only pin scenarios ──')
   const budget = 50_000
   const pin = { gpu: [pinned(GPU_5070)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const hasSsd = hasType(result.slots, 'ssd')
   console.log(`\n— GPU5070 @50k: total=${total} ssd=${hasSsd} cpu=${slotOf(result.slots,'cpu')?.name?.slice(0,25)}`)
@@ -200,7 +171,7 @@ console.log('\n── perSlot pool selection: GPU-only pin scenarios ──')
   const budget = 40_000
   const pin = { gpu: [pinned(GPU_5070)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   console.log(`\n— GPU5070 @40k: total=${total} ssd=${hasType(result.slots,'ssd')}`)
   assert(total <= budget,              '4B GPU5070@40k: total ≤ 40k', `got ${total}`)
@@ -217,7 +188,7 @@ console.log('\n── DDR4 pin scenarios (perSlot + supplemental DDR4 MB) ──
   const budget = 50_000
   const pin = { gpu: [pinned(GPU_5070)], ram: [pinned(RAM_DDR4_32G)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbRamType = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   const mbSocket  = slotOf(result.slots, 'motherboard')?.attributes['socket']
@@ -234,7 +205,7 @@ console.log('\n── DDR4 pin scenarios (perSlot + supplemental DDR4 MB) ──
   const budget = 37_000
   const pin = { gpu: [pinned(GPU_5070)], ram: [pinned(RAM_DDR4_32G)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbRamType = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   console.log(`\n— GPU5070+DDR4-32G @37k: total=${total} MB.rtype=${mbRamType}`)
@@ -249,7 +220,7 @@ console.log('\n── DDR4 pin scenarios (perSlot + supplemental DDR4 MB) ──
   const budget = 35_000
   const pin = { gpu: [pinned(GPU_5070)], ram: [pinned(RAM_DDR4_32G)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbRamType = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   console.log(`\n— GPU5070+DDR4-32G @35k: total=${total} MB.rtype=${mbRamType} (was failing with ratio×budget)`)
@@ -264,7 +235,7 @@ console.log('\n── DDR4 pin scenarios (perSlot + supplemental DDR4 MB) ──
   const budget = 35_000
   const pin = { gpu: [pinned(GPU_5070)], ram: [pinned(RAM_DDR4_4G)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbRamType = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   console.log(`\n— GPU5070+DDR4-4G @35k: total=${total} MB.rtype=${mbRamType}`)
@@ -278,7 +249,7 @@ console.log('\n── DDR4 pin scenarios (perSlot + supplemental DDR4 MB) ──
   const budget = 50_000
   const pin = { gpu: [pinned(GPU_5070)], ram: [pinned(RAM_DDR4_4G)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbRamType = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   console.log(`\n— GPU5070+DDR4-4G @50k: total=${total} MB.rtype=${mbRamType}`)
@@ -296,7 +267,7 @@ console.log('\n── DDR5 pin scenarios ──')
   const budget = 50_000
   const pin = { gpu: [pinned(GPU_5070)], ram: [pinned(RAM_DDR5_8G)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbRamType = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   console.log(`\n— GPU5070+DDR5-8G @50k: total=${total} MB.rtype=${mbRamType}`)
@@ -310,7 +281,7 @@ console.log('\n── DDR5 pin scenarios ──')
   const budget = 40_000
   const pin = { gpu: [pinned(GPU_5070)], ram: [pinned(RAM_DDR5_8G)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbRamType = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   console.log(`\n— GPU5070+DDR5-8G @40k: total=${total} MB.rtype=${mbRamType}`)
@@ -324,7 +295,7 @@ console.log('\n── DDR5 pin scenarios ──')
   const budget = 37_000
   const pin = { gpu: [pinned(GPU_5070)], ram: [pinned(RAM_DDR5_8G)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbRamType = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   console.log(`\n— GPU5070+DDR5-8G @37k: total=${total} MB.rtype=${mbRamType}`)
@@ -341,7 +312,7 @@ console.log('\n── AM4 CPU pin scenarios (supplemental DDR4 MB) ──')
   const budget = 40_000
   const pin = { cpu: [pinned(CPU_AM4_R5500)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbRamType = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
   const mbSocket  = slotOf(result.slots, 'motherboard')?.attributes['socket']
@@ -357,7 +328,7 @@ console.log('\n── AM4 CPU pin scenarios (supplemental DDR4 MB) ──')
   const budget = 30_000
   const pin = { cpu: [pinned(CPU_AM4_R5500)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbSocket  = slotOf(result.slots, 'motherboard')?.attributes['socket']
   const mbRamType = slotOf(result.slots, 'motherboard')?.attributes['ram_type']
@@ -372,7 +343,7 @@ console.log('\n── AM4 CPU pin scenarios (supplemental DDR4 MB) ──')
   const budget = 25_000
   const pin = { cpu: [pinned(CPU_AM4_ATH)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const total = totalCostOf(result.slots, CFG)
   const mbSocket  = slotOf(result.slots, 'motherboard')?.attributes['socket']
   console.log(`\n— AM4-Athlon @25k: total=${total} MB.sock=${mbSocket}`)
@@ -388,7 +359,7 @@ console.log('\n── no-pin budget sweep ──')
 
 for (const budget of [90_000, 80_000, 60_000, 50_000, 40_000, 30_000]) {
   const candidates = selectCandidates(budget, {})
-  const result = buildSuggestion(candidates, RULES, CFG, { budget })
+  const result = buildSuggestion(candidates, CFG, { budget })
   const total  = totalCostOf(result.slots, CFG)
   const hasGpu = hasType(result.slots, 'gpu')
   const hasCpu = hasType(result.slots, 'cpu')
@@ -431,7 +402,7 @@ console.log('\n── pairwise compatibility after perSlot pool selection ──
   const budget = 50_000
   const pin = { gpu: [pinned(GPU_5070)], ram: [pinned(RAM_DDR4_32G)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const mb  = slotOf(result.slots, 'motherboard')
   const ram = slotOf(result.slots, 'ram') ?? RAM_DDR4_32G  // pinned
   const mbRts: string[] = Array.isArray(mb?.attributes['ram_type'])
@@ -457,7 +428,7 @@ console.log('\n── pairwise compatibility after perSlot pool selection ──
   const budget = 40_000
   const pin = { cpu: [pinned(CPU_AM4_R5500)] }
   const candidates = selectCandidates(budget, pin)
-  const result = buildSuggestion(candidates, RULES, CFG, { budget, pinned: pin })
+  const result = buildSuggestion(candidates, CFG, { budget, pinned: pin })
   const mbSocket = String(slotOf(result.slots, 'motherboard')?.attributes['socket'] ?? '')
   assert(mbSocket === 'AM4', '9B pairwise: AM4 CPU pinned → MB socket = AM4', `got ${mbSocket}`)
 }

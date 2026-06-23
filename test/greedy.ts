@@ -8,16 +8,9 @@
  *   PSU: cheapest adequate for total power draw (÷ psuSafetyFactor)
  */
 
-import { ENTITY_TYPES, ENTITY_TYPE_LABELS } from '~/data/entityTypes'
 import type { Entity } from '~/data/types'
-import { RULES } from '~/data/rules'
-import { buildSuggestion, type DomainConfig } from '~/engine/suggest'
-import {
-  FILL_ORDER, MAX_PER_TYPE, DYNAMIC_MAX_PER_TYPE,
-  AGGREGATE_GUARD_TYPES, AGGREGATE_DISPLAY, REQUIRED_TYPES,
-  COST_ATTRIBUTE, COST_PRECISION, CAPACITY_FACTOR, SELECTION_ORDER,
-} from '~/composables/simulationConfig'
-import { TIER_RULES } from '~/composables/tierRules'
+import { buildSuggestion } from '~/engine/suggest'
+import { DOMAIN } from '~/domains'
 
 // ── test harness ─────────────────────────────────────────────────────────────
 
@@ -34,27 +27,7 @@ function assert(cond: boolean, label: string, detail = ''): void {
   }
 }
 
-// ── standard DomainConfig (mirrors DEFAULT but explicit) ─────────────────────
-
-const CFG: DomainConfig = {
-  fillOrder:         [...FILL_ORDER],
-  entityTypes:       [...ENTITY_TYPES],
-  entityTypeLabels:  { ...ENTITY_TYPE_LABELS },
-  maxPerType:        { ...MAX_PER_TYPE },
-  dynamicMaxPerType: { ...DYNAMIC_MAX_PER_TYPE },
-  aggregateGuardTypes: [...AGGREGATE_GUARD_TYPES],
-  aggregateDisplay:  { ...AGGREGATE_DISPLAY },
-  requiredTypes:     [...REQUIRED_TYPES],
-  costAttribute:     COST_ATTRIBUTE,
-  costPrecision:     COST_PRECISION,
-  tierRules:         [...TIER_RULES],
-  anchorType:        'gpu',
-  capacityType:      'psu',
-  capacityAttribute: 'watt_output',
-  loadAttributes:    ['power_draw_w', 'tdp_w'],
-  capacityFactor:    CAPACITY_FACTOR,
-  selectionOrder:    [...SELECTION_ORDER],
-}
+const CFG = DOMAIN
 
 // ── shared inline support components ─────────────────────────────────────────
 
@@ -105,7 +78,7 @@ console.log('\n── GPU-first spec-chain property ──')
 
 const gpuFirst = buildSuggestion(
   [RTX4070_ENTITY, CPU_HIGH_CACHE, ...BASE_SUPPORT],
-  RULES, CFG, { budget: 100_000 },
+  CFG, { budget: 100_000 },
 )
 assert((gpuFirst.slots['gpu'] ?? []).length > 0, 'spec-chain: GPU present (not replaced by extra RAM)')
 const ramQty = (gpuFirst.slots['ram'] ?? []).reduce((s, i) => s + i.quantity, 0)
@@ -113,7 +86,7 @@ assert(ramQty <= 1, 'spec-chain: RAM qty ≤ 1 (minimum adequate — not inflate
 
 const tiny = buildSuggestion(
   [RTX4090_ENTITY, CPU_LOW_CACHE, ...BASE_SUPPORT],
-  RULES, CFG, { budget: 5_000 },
+  CFG, { budget: 5_000 },
 )
 const tinyTotal = Object.values(tiny.slots).flatMap(s => s)
   .reduce((sum, s) => sum + Number(s.entity.attributes['unit_cost'] ?? 0) * s.quantity, 0)
@@ -122,7 +95,7 @@ assert(tinyTotal <= 5_000, 'budget 5k: total ≤ budget', `got ${tinyTotal}`)
 console.log('\n── TierRule enforcement ──')
 
 const tierEntitiesA: Entity[] = [RTX4090_ENTITY, CPU_LOW_CACHE, ...BASE_SUPPORT]
-const tierResultA = buildSuggestion(tierEntitiesA, RULES, CFG, { budget: 200_000 })
+const tierResultA = buildSuggestion(tierEntitiesA, CFG, { budget: 200_000 })
 const tierGpuA = (tierResultA.slots['gpu'] ?? [])[0]?.entity.code ?? 'NONE'
 const tierCpuA = (tierResultA.slots['cpu'] ?? [])[0]?.entity.code ?? 'NONE'
 console.log(`\n— RTX4090 + low-cache CPU only: GPU=${tierGpuA} CPU=${tierCpuA}`)
@@ -138,7 +111,7 @@ assert(
 )
 
 const tierEntitiesB: Entity[] = [RTX4090_ENTITY, CPU_HIGH_CACHE, ...BASE_SUPPORT]
-const tierResultB = buildSuggestion(tierEntitiesB, RULES, CFG, { budget: 200_000 })
+const tierResultB = buildSuggestion(tierEntitiesB, CFG, { budget: 200_000 })
 const tierGpuB = (tierResultB.slots['gpu'] ?? [])[0]?.entity.code ?? 'NONE'
 console.log(`— RTX4090 + high-cache CPU only: GPU=${tierGpuB}`)
 assert(
@@ -148,7 +121,7 @@ assert(
 )
 
 const tierEntitiesC: Entity[] = [RTX4090_ENTITY, RTX4070_ENTITY, CPU_LOW_CACHE, CPU_HIGH_CACHE, ...BASE_SUPPORT]
-const tierResultC = buildSuggestion(tierEntitiesC, RULES, CFG, { budget: 200_000 })
+const tierResultC = buildSuggestion(tierEntitiesC, CFG, { budget: 200_000 })
 const tierGpuC = (tierResultC.slots['gpu'] ?? [])[0]?.entity.code ?? 'NONE'
 const tierCpuC = (tierResultC.slots['cpu'] ?? [])[0]?.entity.code ?? 'NONE'
 console.log(`— both GPUs + both CPUs: GPU=${tierGpuC} CPU=${tierCpuC}`)
@@ -164,7 +137,7 @@ assert(
 )
 
 const tierEntitiesD: Entity[] = [RTX4090_ENTITY, RTX4070_ENTITY, CPU_LOW_CACHE, ...BASE_SUPPORT]
-const tierResultD = buildSuggestion(tierEntitiesD, RULES, CFG, { budget: 200_000 })
+const tierResultD = buildSuggestion(tierEntitiesD, CFG, { budget: 200_000 })
 const tierGpuD = (tierResultD.slots['gpu'] ?? [])[0]?.entity.code ?? 'NONE'
 const tierCpuD = (tierResultD.slots['cpu'] ?? [])[0]?.entity.code ?? 'NONE'
 console.log(`— RTX4090 + RTX4070 + low-cache CPU: GPU=${tierGpuD} CPU=${tierCpuD}`)
@@ -228,7 +201,7 @@ const ddr4PinnedInput = {
 }
 
 const ddr4BugPool: Entity[] = [GPU_5070_ENTITY, DDR4_RAM_ENTITY, CPU_LGA1700_MID, MB_LGA1700_DDR5_ONLY, PSU_1000W_ENTITY]
-const ddr4BugResult = buildSuggestion(ddr4BugPool, RULES, CFG, ddr4PinnedInput)
+const ddr4BugResult = buildSuggestion(ddr4BugPool, CFG, ddr4PinnedInput)
 const bugMbSlots = ddr4BugResult.slots['motherboard'] ?? []
 console.log(`\n— bug pool (DDR5 only): MB=${bugMbSlots.map(s => s.entity.code)}, CPU=${(ddr4BugResult.slots['cpu'] ?? []).map(s => s.entity.code)}`)
 assert(
@@ -238,7 +211,7 @@ assert(
 )
 
 const ddr4FixPool: Entity[] = [GPU_5070_ENTITY, DDR4_RAM_ENTITY, CPU_LGA1700_MID, MB_LGA1700_DDR5_ONLY, MB_LGA1700_DDR4, PSU_1000W_ENTITY]
-const ddr4FixResult = buildSuggestion(ddr4FixPool, RULES, CFG, ddr4PinnedInput)
+const ddr4FixResult = buildSuggestion(ddr4FixPool, CFG, ddr4PinnedInput)
 const fixMbSlots = ddr4FixResult.slots['motherboard'] ?? []
 const fixTotal = Object.values(ddr4FixResult.slots).flat()
   .reduce((sum, s) => sum + Number(s.entity.attributes['unit_cost'] ?? 0) * s.quantity, 0)

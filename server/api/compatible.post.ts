@@ -1,5 +1,5 @@
 import { runPairwise } from '~/engine/pairwise'
-import { RULES } from '~/data/rules'
+import { DOMAIN } from '~/domains'
 import { fetchPickerCandidates, fetchByIds } from '../utils/db'
 import type { Entity } from '~/data/types'
 
@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   const contextEntities: Entity[] = currentEntityIds.length > 0 ? await fetchByIds(DB, currentEntityIds) : []
   const pool: Entity[] = await fetchPickerCandidates(DB, type, maxCost, blockedIds)
 
-  const errorRules = RULES.filter((r) => r.is_active && r.check_type === 'pairwise' && r.severity === 'error')
+  const errorRules = DOMAIN.rules.filter((r) => r.is_active && r.check_type === 'pairwise' && r.severity === 'error')
   const compatible = pool.filter((candidate) =>
     errorRules.every((rule) =>
       contextEntities.every((other) =>
