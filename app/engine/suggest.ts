@@ -413,6 +413,59 @@ function tryFillPackage(
     }
   }
 
+  // ── Budget redistribution loop: cycle every slot until no upgrade fits remaining budget ──────
+  {
+    const upgradeOrder: string[] = [
+      ...(cfg.selectionOrder ?? []).filter((t) => t !== capacityType),
+      ...[...new Set((cfg.postFillTypes ?? []).filter((pf) => !pf.upgradeExisting).map((pf) => pf.type))],
+      capacityType,
+    ]
+    const slotFor = (type: string): Entity | null =>
+      postFilled[type]?.[0]?.entity ?? chosen[type] ?? null
+
+    let anyUpgraded = true
+    while (anyUpgraded && remaining > 0) {
+      anyUpgraded = false
+      for (const type of upgradeOrder) {
+        if (!toFill.has(type)) continue
+        if ((quantities[type] ?? 1) > 1) continue
+        const current = slotFor(type)
+        if (!current) continue
+        const currentCost = unitCost(current, cfg)
+
+        const ctxWithout = [
+          ...context, ...anchorCtx,
+          ...Object.entries(chosen).filter(([t]) => t !== type).map(([, e]) => e),
+          ...Object.entries(postFilled).filter(([t]) => t !== type).flatMap(([, s]) => s.map((i) => i.entity)),
+        ]
+
+        const capAttr = cfg.capacityAttribute ?? 'watt_output'
+        const minCapWatt = type === capacityType ? Number(current.attributes[capAttr] ?? 0) : 0
+
+        const best = available
+          .filter((e) => {
+            if (e.entity_type !== type || e.id === current.id) return false
+            const cost = unitCost(e, cfg)
+            if (cost <= currentCost || cost - currentCost > remaining) return false
+            if (!cachedPairwise(e, ctxWithout, rules)) return false
+            if (minCapWatt > 0 && Number(e.attributes[capAttr] ?? 0) < minCapWatt) return false
+            return true
+          })
+          .sort((a, b) => unitCost(b, cfg) - unitCost(a, cfg))[0] ?? null
+
+        if (best) {
+          remaining -= unitCost(best, cfg) - currentCost
+          if (postFilled[type]?.length) {
+            postFilled[type] = [{ entity: best, quantity: 1 }]
+          } else {
+            chosen[type] = best
+          }
+          anyUpgraded = true
+        }
+      }
+    }
+  }
+
   const pkg: Record<string, SlotItem[]> = {}
   if (toFill.has(anchorType) && anchorEntity) pkg[anchorType] = [{ entity: anchorEntity, quantity: 1 }]
   for (const [type, entity] of Object.entries(chosen)) {
