@@ -1,18 +1,16 @@
 import { runPairwise } from '~/engine/pairwise'
 import { DOMAIN } from '~/domains'
 import { fetchPickerCandidates, fetchByIds, dbConfigFrom } from '../utils/db'
+import { parseBudget, parseEntityType, parseBlockedIds, parseLookupIds } from '../utils/validate'
 import type { Entity } from '~/data/types'
 
-interface CompatibleRequest {
-  type: string
-  budget: number | null
-  currentEntityIds: number[]
-  blockedIds: number[]
-}
-
 export default defineEventHandler(async (event) => {
-  const body = await readBody<CompatibleRequest>(event)
-  const { type, budget, currentEntityIds, blockedIds } = body
+  const body = await readBody<Record<string, unknown>>(event)
+
+  const type             = parseEntityType(body.type, DOMAIN.entityTypes)
+  const budget           = parseBudget(body.budget)
+  const currentEntityIds = parseLookupIds(body.currentEntityIds)
+  const blockedIds       = parseBlockedIds(body.blockedIds)
 
   const DB = event.context.cloudflare?.env?.DB
   if (!DB) throw createError({ statusCode: 503, message: 'D1 database not available' })

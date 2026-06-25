@@ -3,21 +3,17 @@ import type { SlotItem } from '~/engine/suggest'
 import { DOMAIN } from '~/domains'
 import { fetchForDomain, fetchByIds } from '../utils/fetchForDomain'
 import { dbConfigFrom } from '../utils/db'
-
-interface SuggestRequest {
-  budget: number | null
-  pinned: Record<string, Array<{ id: number; quantity: number }>>
-  excluded: Record<string, boolean>
-  blockedIds: number[]
-}
+import { parseBudget, parseBlockedIds, parsePinned } from '../utils/validate'
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<SuggestRequest>(event)
+  const body = await readBody<Record<string, unknown>>(event)
 
-  const budget: number | null = body.budget ?? null
-  const pinnedReq             = body.pinned   ?? {}
-  const excluded              = body.excluded  ?? {}
-  const blockedIds: number[]  = body.blockedIds ?? []
+  const budget     = parseBudget(body.budget)
+  const pinnedReq  = parsePinned(body.pinned, DOMAIN.entityTypes)
+  const excluded   = (body.excluded && typeof body.excluded === 'object' && !Array.isArray(body.excluded))
+    ? body.excluded as Record<string, boolean>
+    : {}
+  const blockedIds = parseBlockedIds(body.blockedIds)
 
   const DB = event.context.cloudflare?.env?.DB
   if (!DB) throw createError({ statusCode: 503, message: 'D1 database not available' })
