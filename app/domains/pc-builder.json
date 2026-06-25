@@ -22,7 +22,7 @@
     }
   },
   "postFillTypes": [
-    { "type": "ssd", "preferAttribute": "capacity_gb", "maxAttrValue": 512 },
+    { "type": "ssd", "preferAttribute": "capacity_gb", "minAttrValue": 240, "maxAttrValue": 512 },
     { "type": "ssd", "preferAttribute": "capacity_gb", "minAttrValue": 1000, "upgradeExisting": true }
   ],
   "aggregateGuardTypes": ["psu", "ram"],
