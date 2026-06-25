@@ -36,7 +36,7 @@
   "capacityType":        "psu",
   "capacityAttribute":   "watt_output",
   "loadAttributes":      ["power_draw_w", "tdp_w"],
-  "capacityFactor":      0.8,
+  "capacityFactor":      0.85,
 
   "fillStrategy": "backtrack",
 
@@ -280,7 +280,7 @@
     {
       "id": 6,
       "code": "AGG_POWER_SAFETY",
-      "name": "Power Usage Should Stay Under 80% PSU Capacity",
+      "name": "Power Usage Should Stay Under 85% PSU Capacity",
       "check_type": "aggregate",
       "severity": "warning",
       "priority": 180,
@@ -298,12 +298,12 @@
           "mode": "entity_attribute",
           "entity_type": "psu",
           "attribute": "watt_output",
-          "safety_factor": 0.8
+          "safety_factor": 0.85
         },
         "operator": "<="
       },
-      "message": "Total power draw :aggregate_value W exceeds 80% of PSU capacity",
-      "resolution": "Recommended PSU: at least :aggregate_value|multiply(1.25)|ceil W"
+      "message": "Total power draw :aggregate_value W exceeds 85% of PSU capacity",
+      "resolution": "Recommended PSU: at least :aggregate_value|multiply(1.18)|ceil W"
     }
   ]
 }
