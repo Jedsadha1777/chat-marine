@@ -1,5 +1,5 @@
 import type { Entity, ValidationIssue, BomItem } from '~/data/types'
-import { ENTITY_TYPES, COST_ATTRIBUTE, COST_PRECISION, type EntityType } from '~/domains'
+import { DOMAIN, ENTITY_TYPES, COST_ATTRIBUTE, COST_PRECISION, type EntityType } from '~/domains'
 import type { SlotItem } from '~/engine/suggest'
 
 export type { SlotItem }
@@ -91,33 +91,34 @@ export function useSimulation() {
   }
 
   function slotLimit(type: EntityType): number {
-    if (type !== 'ram') return 1
-    const srcItems = suggestion.value['motherboard']
-    if (srcItems.length > 0) {
-      const val = srcItems[0]?.entity.attributes['ram_slots']
+    const dynCfg = DOMAIN.dynamicMaxPerType[type]
+    if (!dynCfg) return DOMAIN.maxPerType[type] ?? 1
+    const srcItems = suggestion.value[dynCfg.source_type]
+    if (srcItems?.length > 0) {
+      const val = srcItems[0]?.entity.attributes[dynCfg.source_attribute]
       if (val !== undefined && val !== null) return Number(val)
     }
-    return 2
+    return dynCfg.fallback
   }
 
   function canAddToSlot(type: EntityType, entity: Entity): boolean {
-    const limit = slotLimit(type)
-    if (type !== 'ram') return pinned[type].length < limit
+    const dynCfg = DOMAIN.dynamicMaxPerType[type]
+    if (!dynCfg) return pinned[type].length < slotLimit(type)
 
-    const srcItems = suggestion.value['motherboard']
+    const srcItems = suggestion.value[dynCfg.source_type]
     if (!srcItems?.length) return false
-    const capacity = Number(srcItems[0]?.entity.attributes['ram_slots'] ?? 0)
+    const capacity = Number(srcItems[0]?.entity.attributes[dynCfg.source_attribute] ?? 0)
     if (!capacity) return false
 
-    if (!entity.attributes['modules']) {
+    const capAttr = dynCfg.capacity_attribute
+    if (!capAttr || !entity.attributes[capAttr]) {
       const used = pinned[type].reduce((sum, s) => sum + s.quantity, 0)
       return used + 1 <= capacity
     }
-    const capAttr = 'modules'
-    const usedModules = pinned[type].reduce((sum, s) => {
+    const usedCap = pinned[type].reduce((sum, s) => {
       return sum + Number(s.entity.attributes[capAttr] ?? 1) * s.quantity
     }, 0)
-    return usedModules + Number(entity.attributes[capAttr] ?? 1) <= capacity
+    return usedCap + Number(entity.attributes[capAttr] ?? 1) <= capacity
   }
 
   function pin(type: EntityType, entity: Entity | null): void {
