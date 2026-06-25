@@ -184,7 +184,7 @@
     "rules": {
       "type": "array",
       "items": { "$ref": "#/$defs/CompatibilityRule" },
-      "description": "All compatibility rules for this domain. Two check types: pairwise (entity vs entity) and aggregate (sum/count across types vs a capacity)."
+      "description": "All compatibility rules for this domain. Two check types: pairwise (entity vs entity) and aggregate (sum/count/min/max across types vs a capacity or fixed threshold). Aggregate rules are automatically skipped when no items of the target from_types are present in the build."
     }
   },
 
@@ -324,7 +324,7 @@
     "AggregateCondition": {
       "type": "object",
       "required": ["aggregate", "compare_to", "operator"],
-      "description": "Computes a value across multiple entities then compares it to a capacity. condition evaluates to true (= rule passes) when the comparison holds.",
+      "description": "Computes a value (sum/min/max/avg/count) across one or more entity types and compares it to a threshold. Threshold can be an entity attribute, a simulation constraint, or a fixed literal. The rule is automatically skipped when no items of the specified from_types are present. condition evaluates to true (= rule passes) when the comparison holds.",
       "properties": {
         "aggregate": {
           "type": "object",
@@ -359,14 +359,21 @@
         },
         "operator": { "type": "string", "enum": ["<=", ">=", "<", ">", "=="], "description": "aggregate_value operator capacity_value. Rule passes when this comparison is true." }
       },
-      "examples": [{
-        "aggregate": {
-          "function": "sum", "attribute": "power_draw_w", "fallback_attributes": ["tdp_w"],
-          "from_types": ["*"], "exclude_types": ["psu"], "multiply_by_quantity": true
+      "examples": [
+        {
+          "aggregate": {
+            "function": "sum", "attribute": "power_draw_w", "fallback_attributes": ["tdp_w"],
+            "from_types": ["*"], "exclude_types": ["psu"], "multiply_by_quantity": true
+          },
+          "compare_to": { "mode": "entity_attribute", "entity_type": "psu", "attribute": "watt_output" },
+          "operator": "<="
         },
-        "compare_to": { "mode": "entity_attribute", "entity_type": "psu", "attribute": "watt_output" },
-        "operator": "<="
-      }]
+        {
+          "aggregate": { "function": "min", "attribute": "capacity_gb", "from_types": ["ssd"] },
+          "compare_to": { "mode": "fixed_value", "value": 240 },
+          "operator": ">="
+        }
+      ]
     },
 
     "Module": {

@@ -178,7 +178,19 @@ Create `app/domains/<your-domain>.json` and add the schema reference for editor 
 | `attribute_pair` | source กับ target ใช้ attribute คนละชื่อแต่ค่าต้องตรงกัน |
 | `attribute_range` | attribute ของ source ต้องอยู่ใน range ของ target |
 
-### Aggregate rule — รวมค่าจากหลาย entity แล้วเทียบกับ capacity
+### Aggregate rule — รวมค่าจากหลาย entity แล้วเทียบกับ capacity หรือ threshold คงที่
+
+**`compare_to` มี 3 mode:**
+
+| mode | ใช้เมื่อ |
+|---|---|
+| `entity_attribute` | เทียบกับ attribute ของ entity อื่น (เช่น watt_output ของ PSU) |
+| `fixed_value` | เทียบกับตัวเลขคงที่ (เช่น minimum 240 GB) |
+| `simulation_constraint` | เทียบกับค่าที่ส่งมาจาก constraints map ตอน runtime |
+
+> **หมายเหตุ:** ถ้าไม่มี entity ของ `from_types` อยู่ใน build เลย rule จะถูก skip อัตโนมัติ (ไม่ยิง error)
+
+**ตัวอย่าง 1 — เทียบกับ entity attribute (power vs PSU):**
 
 ```json
 {
@@ -209,6 +221,36 @@ Create `app/domains/<your-domain>.json` and add the schema reference for editor 
   "resolution": "Select a PSU with wattage above :aggregate_value W"
 }
 ```
+
+**ตัวอย่าง 2 — เทียบกับ fixed threshold (SSD minimum 240 GB):**
+
+```json
+{
+  "id": 9,
+  "code": "SSD_MIN_CAPACITY",
+  "name": "SSD Must Be At Least 240 GB",
+  "check_type": "aggregate",
+  "severity": "error",
+  "priority": 165,
+  "is_active": true,
+  "condition": {
+    "aggregate": {
+      "function": "min",
+      "attribute": "capacity_gb",
+      "from_types": ["ssd"]
+    },
+    "compare_to": {
+      "mode": "fixed_value",
+      "value": 240
+    },
+    "operator": ">="
+  },
+  "message": "SSD must have at least 240 GB (current: :aggregate_value GB)",
+  "resolution": "Select an SSD with 240 GB or more"
+}
+```
+
+`function` options สำหรับ aggregate: `sum`, `count`, `min`, `max`, `avg`
 
 ### Tier rule — entity high-end ต้องใช้คู่กับ entity ที่รองรับ
 

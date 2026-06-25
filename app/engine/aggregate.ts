@@ -9,7 +9,7 @@ import { render } from '~/engine/template'
 function computeAggregate(
   cfg: AggregateCondition['aggregate'],
   items: SimulationItem[],
-): number {
+): number | null {
   const filtered = items.filter((item) => {
     const t = item.entity.entity_type
     if (cfg.from_types[0] !== '*' && !cfg.from_types.includes(t)) return false
@@ -35,7 +35,7 @@ function computeAggregate(
   }
 
   const values = filtered.map(extractVal)
-  if (values.length === 0) return 0
+  if (values.length === 0) return null
 
   switch (cfg.function) {
     case 'sum':   return values.reduce((a, b) => a + b, 0)
@@ -116,7 +116,7 @@ export function getAggregateDetail(
   const aggValue = computeAggregate(cond.aggregate, items)
   const capValue = resolveCapacity(cond.compare_to, items, constraints)
 
-  if (capValue === null) return null
+  if (aggValue === null || capValue === null) return null
 
   const utilizationPct = capValue > 0
     ? Math.round((aggValue / capValue) * 100 * 10) / 10
@@ -135,7 +135,7 @@ export function runAggregate(
   const aggValue = computeAggregate(cond.aggregate, items)
   const capValue = resolveCapacity(cond.compare_to, items, constraints)
 
-  if (capValue === null) return []
+  if (aggValue === null || capValue === null) return []
 
   const passed = compare(aggValue, cond.operator, capValue)
   if (passed) return []

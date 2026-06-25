@@ -231,6 +231,29 @@
       "resolution": "Select a PSU with wattage above :aggregate_value W"
     },
     {
+      "id": 9,
+      "code": "SSD_MIN_CAPACITY",
+      "name": "SSD M.2 Must Be At Least 240 GB",
+      "check_type": "aggregate",
+      "severity": "error",
+      "priority": 165,
+      "is_active": true,
+      "condition": {
+        "aggregate": {
+          "function": "min",
+          "attribute": "capacity_gb",
+          "from_types": ["ssd"]
+        },
+        "compare_to": {
+          "mode": "fixed_value",
+          "value": 240
+        },
+        "operator": ">="
+      },
+      "message": "SSD M.2 must have at least 240 GB (current: :aggregate_value GB)",
+      "resolution": "Select an SSD M.2 with 240 GB or more"
+    },
+    {
       "id": 8,
       "code": "SSD_M2_SLOT",
       "name": "SSD Requires M.2 Slot on Motherboard",
