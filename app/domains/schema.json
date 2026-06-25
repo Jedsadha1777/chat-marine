@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain-config",
+  "title": "DomainConfig",
+  "description": "Full configuration for one domain. One JSON file = one domain. Wire it in app/domains/index.ts — no other files need changing.",
+  "type": "object",
+
+  "required": [
+    "entityTypes", "entityTypeLabels",
+    "fillOrder", "maxPerType", "dynamicMaxPerType",
+    "aggregateGuardTypes", "aggregateDisplay",
+    "requiredTypes", "costAttribute", "costPrecision", "rules"
+  ],
+
+  "properties": {
+
+    "$schema": {
+      "type": "string",
+      "description": "Points to this schema file for editor validation. Set to './schema.json'."
+    },
+
+    "entityTypes": {
+      "type": "array", "items": { "type": "string" },
+      "minItems": 1,
+      "description": "All entity type IDs in this domain. Used as the canonical list throughout the engine. Order does not matter here — use fillOrder and selectionOrder for ordering.",
+      "examples": [["motherboard", "cpu", "ram", "gpu", "psu", "ssd"]]
+    },
+
+    "entityTypeLabels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Display names for each entity type. Keys must match entityTypes.",
+      "examples": [{ "cpu": "CPU", "ram": "RAM", "motherboard": "Motherboard" }]
+    },
+
+    "fillOrder": {
+      "type": "array", "items": { "type": "string" },
+      "description": "Order entity slots appear in the BOM output. Also the fallback iteration order for the engine if selectionOrder is omitted.",
+      "examples": [["gpu", "cpu", "motherboard", "ram", "ssd", "psu"]]
+    },
+
+    "selectionOrder": {
+      "type": "array", "items": { "type": "string" },
+      "description": "Order the backtrack fill selects core entities (not including anchorType or capacityType). These are filled share-by-share. Omit to use fillOrder.",
+      "examples": [["cpu", "ram", "motherboard", "psu"]]
+    },
+
+    "maxPerType": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 1 },
+      "description": "Hard cap on quantity per entity type. Types not listed here default to 1 (or use dynamicMaxPerType). Use for types that are always a single unit.",
+      "examples": [{ "gpu": 1, "cpu": 1, "motherboard": 1, "psu": 1, "ssd": 1 }]
+    },
+
+    "dynamicMaxPerType": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/DynamicMaxCfg" },
+      "description": "For entity types whose slot count depends on another entity's attribute (e.g., RAM slots from motherboard). Key = the entity type whose count is dynamic.",
+      "examples": [{
+        "ram": {
+          "source_type": "motherboard",
+          "source_attribute": "ram_slots",
+          "capacity_attribute": "modules",
+          "sort_attribute": "capacity_gb",
+          "fallback": 2
+        }
+      }]
+    },
+
+    "requiredTypes": {
+      "type": "array", "items": { "type": "string" },
+      "description": "Entity types that must be present for a build to be valid. Missing types produce an error validation issue.",
+      "examples": [["cpu", "motherboard", "ram", "psu"]]
+    },
+
+    "anchorType": {
+      "type": "string",
+      "description": "The 'hero' entity that defines the tier of the whole build. The engine tries every anchor candidate and picks the best-fitting combination. Gets the largest share of the budget. If omitted, defaults to fillOrder[0].",
+      "examples": ["gpu"]
+    },
+
+    "capacityType": {
+      "type": "string",
+      "description": "Entity type that acts as a capacity constraint (e.g., PSU for power). The engine selects the cheapest item whose capacityAttribute >= totalLoad / capacityFactor. If omitted, no capacity constraint is applied.",
+      "examples": ["psu"]
+    },
+
+    "capacityAttribute": {
+      "type": "string",
+      "description": "Attribute on the capacityType entity that holds its rated capacity (e.g., watt_output for PSU). Required when capacityType is set.",
+      "examples": ["watt_output"]
+    },
+
+    "loadAttributes": {
+      "type": "array", "items": { "type": "string" },
+      "description": "Attribute names that represent load/consumption on non-capacity entities. The engine reads the first non-null attribute from this list per entity. Required when capacityType is set.",
+      "examples": [["power_draw_w", "tdp_w"]]
+    },
+
+    "capacityFactor": {
+      "type": "number", "minimum": 0.1, "maximum": 1.0,
+      "description": "Safety multiplier for capacity selection. minCapacity = totalLoad / capacityFactor. 0.8 means the chosen PSU can handle 125% of actual draw (80% rule).",
+      "default": 0.8,
+      "examples": [0.8]
+    },
+
+    "aggregateGuardTypes": {
+      "type": "array", "items": { "type": "string" },
+      "description": "Entity types that participate in aggregate constraint checking during backtrack fill. The engine re-checks aggregate rules whenever one of these types changes.",
+      "examples": [["psu", "ram"]]
+    },
+
+    "aggregateDisplay": {
+      "type": "object",
+      "required": ["primary"],
+      "properties": {
+        "primary": { "type": "string", "description": "Rule code to show as the main aggregate meter in the UI (e.g., power capacity bar)." },
+        "safety":  { "type": ["string", "null"], "description": "Rule code for the secondary safety meter (e.g., 80% power rule). Null to hide." }
+      },
+      "description": "Which aggregate rules to display as meters in the simulation UI.",
+      "examples": [{ "primary": "AGG_POWER_CAPACITY", "safety": "AGG_POWER_SAFETY" }]
+    },
+
+    "costAttribute": {
+      "type": "string",
+      "description": "Key in entity.attributes that holds the unit cost. The engine reads this for all budget calculations.",
+      "default": "unit_cost",
+      "examples": ["unit_cost"]
+    },
+
+    "costColumn": {
+      "type": "string",
+      "description": "Database column name for unit cost. Used in SQL queries (SELECT, WHERE, ORDER BY). Must match the actual DB schema column. Defaults to 'unit_cost'.",
+      "default": "unit_cost",
+      "examples": ["unit_cost"]
+    },
+
+    "costPrecision": {
+      "type": "integer", "minimum": 0, "maximum": 4,
+      "description": "Decimal places for cost display and rounding. 0 = whole numbers (THB), 2 = cents.",
+      "examples": [0, 2]
+    },
+
+    "publishedStatus": {
+      "type": "string",
+      "description": "The entity status value that means 'available for suggestion'. Only entities with this status are included in the pool. Defaults to 'published'.",
+      "default": "published",
+      "examples": ["published", "active", "available"]
+    },
+
+    "fillStrategy": {
+      "type": "string",
+      "description": "Name of the fill algorithm to use. Must match a registered strategy in app/engine/strategies/index.ts. Currently only 'backtrack' is available.",
+      "default": "backtrack",
+      "examples": ["backtrack"]
+    },
+
+    "fetchLimits": {
+      "$ref": "#/$defs/FetchLimits",
+      "description": "How many DB rows to fetch per category. Higher values improve suggestion quality at the cost of more D1 row reads."
+    },
+
+    "budgetPlan": {
+      "$ref": "#/$defs/Module",
+      "description": "RuleFlow2 module that calculates anchorTarget from effectiveBudget and entityCount. If omitted, uses the default formula: round(effectiveBudget * ceil(entityCount/2) / entityCount)."
+    },
+
+    "postFillTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/PostFillCfg" },
+      "description": "Extra fill phases that run after backtrack fill completes. Use for entities that are selected in tiers (e.g., SSD: cheap first, upgrade later if budget allows)."
+    },
+
+    "tierRules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/TierRule" },
+      "description": "Cross-entity tier constraints. If a provider entity (e.g., high-end GPU) is selected, it requires a matching tier on another entity type (e.g., high-cache CPU). Evaluated during fill."
+    },
+
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/CompatibilityRule" },
+      "description": "All compatibility rules for this domain. Supports two check types: pairwise (entity vs entity) and aggregate (sum/count across types vs a capacity)."
+    }
+  },
+
+  "$defs": {
+
+    "DynamicMaxCfg": {
+      "type": "object",
+      "required": ["source_type", "source_attribute", "fallback"],
+      "properties": {
+        "source_type":        { "type": "string", "description": "Entity type that owns the slot count attribute (e.g., 'motherboard')." },
+        "source_attribute":   { "type": "string", "description": "Attribute on source_type that holds the slot count (e.g., 'ram_slots')." },
+        "capacity_attribute": { "type": "string", "description": "Attribute on the dynamic entity that counts how many slots one unit consumes (e.g., 'modules' for a dual-channel RAM kit)." },
+        "sort_attribute":     { "type": "string", "description": "Attribute used to sort candidates of this type during selection (e.g., 'capacity_gb'). Highest value preferred." },
+        "fallback":           { "type": "integer", "minimum": 1, "description": "Max quantity to use when source_type has no item selected yet." }
+      }
+    },
+
+    "PostFillCfg": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type":             { "type": "string", "description": "Entity type this phase applies to." },
+        "preferAttribute":  { "type": "string", "description": "Attribute to optimise for (highest value wins within budget)." },
+        "maxAttrValue":     { "type": "number", "description": "Upper bound filter on preferAttribute. Selects the best item at or below this value (e.g., SSD ≤512 GB)." },
+        "minAttrValue":     { "type": "number", "description": "Lower bound filter on preferAttribute. Selects the best item at or above this value (e.g., SSD ≥1000 GB)." },
+        "upgradeExisting":  { "type": "boolean", "default": false, "description": "false = initial fill of empty slot. true = upgrade an already-filled slot if budget remains." }
+      }
+    },
+
+    "FetchLimits": {
+      "type": "object",
+      "required": ["anchor", "anchorNear", "capacity", "core", "coreCheap"],
+      "properties": {
+        "anchor":     { "type": "integer", "minimum": 1, "description": "Max rows fetched for anchorType (top-N by cost descending). Higher = wider anchor selection." },
+        "anchorNear": { "type": "integer", "minimum": 1, "description": "Extra rows for anchor fetched near the calculated anchorTarget price point." },
+        "capacity":   { "type": "integer", "minimum": 1, "description": "Max rows for capacityType." },
+        "core":       { "type": "integer", "minimum": 1, "description": "Max rows per core entity type (top-N by cost descending)." },
+        "coreCheap":  { "type": "integer", "minimum": 1, "description": "Extra cheap rows per core entity type (top-N by cost ascending)." }
+      }
+    },
+
+    "TierRule": {
+      "type": "object",
+      "required": ["name", "provider", "requires"],
+      "properties": {
+        "name":     { "type": "string", "description": "Unique identifier for this tier rule." },
+        "provider": {
+          "type": "object",
+          "required": ["entity_type", "condition"],
+          "properties": {
+            "entity_type": { "type": "string", "description": "Entity type that triggers this rule when its condition matches." },
+            "condition":   { "type": "object", "description": "JSON Logic condition evaluated on the provider entity. Use { 'var': 'attributes.X' } to access attributes." }
+          }
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["entity_type", "condition"],
+            "properties": {
+              "entity_type": { "type": "string", "description": "Entity type that must satisfy this condition when provider matches." },
+              "condition":   { "type": "object", "description": "JSON Logic condition evaluated on each candidate of this type. Candidates failing this condition are excluded from selection." }
+            }
+          }
+        }
+      },
+      "examples": [{
+        "name": "HIGH_BW_GPU_REQUIRES_HIGH_CACHE_CPU",
+        "provider": {
+          "entity_type": "gpu",
+          "condition": { "and": [{ ">": [{ "var": "attributes.memory_bus_bit" }, 312] }, { ">": [{ "var": "attributes.vram_gb" }, 16] }] }
+        },
+        "requires": [{ "entity_type": "cpu", "condition": { ">": [{ "var": "attributes.l3_cache_mb" }, 32] } }]
+      }]
+    },
+
+    "CompatibilityRule": {
+      "type": "object",
+      "required": ["id", "code", "name", "check_type", "severity", "condition", "message", "is_active", "priority"],
+      "properties": {
+        "id":         { "type": "integer", "description": "Unique integer ID within this domain. Used as cache key." },
+        "code":       { "type": "string",  "description": "Unique string code (SCREAMING_SNAKE_CASE). Matches aggregateDisplay keys." },
+        "name":       { "type": "string",  "description": "Human-readable rule name shown in error detail." },
+        "check_type": { "type": "string", "enum": ["pairwise", "aggregate"], "description": "pairwise = evaluate one entity pair at a time. aggregate = sum/count across multiple entities and compare to a capacity." },
+        "severity":   { "type": "string", "enum": ["error", "warning", "info"], "description": "error = blocks valid build. warning = shown but build is still valid. info = informational only." },
+        "priority":   { "type": "integer", "description": "Evaluation order — higher number runs first." },
+        "is_active":  { "type": "boolean", "description": "Set false to disable a rule without removing it." },
+        "message":    { "type": "string",  "description": "Displayed message when rule fails. Use :source.attributes.X, :target.attributes.X, :aggregate_value, :capacity_value, :utilization_pct as interpolation tokens." },
+        "resolution": { "type": "string",  "description": "Suggested fix shown to the user." },
+        "scope": { "$ref": "#/$defs/PairwiseScope", "description": "Required for check_type=pairwise. Defines which entity pairs to evaluate." },
+        "condition": {
+          "description": "Pairwise rules: JSON Logic object ({ '==': [...] }). Aggregate rules: object with top-level 'aggregate' key.",
+          "type": "object",
+          "if":   { "required": ["aggregate"] },
+          "then": { "$ref": "#/$defs/AggregateCondition" },
+          "else": { "$ref": "#/$defs/JsonLogicCondition" }
+        }
+      }
+    },
+
+    "PairwiseScope": {
+      "type": "object",
+      "required": ["match_by"],
+      "properties": {
+        "match_by": {
+          "type": "string",
+          "enum": ["shared_attribute", "attribute_pair", "attribute_range"],
+          "description": "shared_attribute: both entities share the same attribute key and it must match. attribute_pair: source and target have different attribute keys that must match. attribute_range: source attribute must fall within target attribute range."
+        },
+        "attribute_key":      { "type": "string", "description": "Used with shared_attribute: the attribute key checked on both entities." },
+        "source_attribute":   { "type": "string", "description": "Used with attribute_pair/range: attribute on the source entity." },
+        "target_attribute":   { "type": "string", "description": "Used with attribute_pair/range: attribute on the target entity." },
+        "source_types":       { "type": "array", "items": { "type": "string" }, "description": "Filter: only evaluate entities of these types as source. Empty = all types." },
+        "target_types":       { "type": "array", "items": { "type": "string" }, "description": "Filter: only evaluate entities of these types as target." }
+      }
+    },
+
+    "JsonLogicCondition": {
+      "type": "object",
+      "description": "JSON Logic expression. Evaluates to true/false. Available operators: ==, !=, >, >=, <, <=, and, or, not, in, var. Access entity attributes with { 'var': 'source.attributes.X' } or { 'var': 'target.attributes.X' }.",
+      "examples": [
+        { "==": [{ "var": "source.attributes.socket" }, { "var": "target.attributes.socket" }] },
+        { "<=": [{ "var": "source.attributes.modules" }, { "var": "target.attributes.ram_slots" }] }
+      ]
+    },
+
+    "AggregateCondition": {
+      "type": "object",
+      "required": ["aggregate", "compare_to", "operator"],
+      "description": "For aggregate rules. Computes a value across multiple entities and compares it to a capacity.",
+      "properties": {
+        "aggregate": {
+          "type": "object",
+          "required": ["function", "attribute", "from_types"],
+          "properties": {
+            "function":             { "type": "string", "enum": ["sum", "count", "max", "min", "avg"] },
+            "attribute":            { "type": "string", "description": "Primary attribute to aggregate (e.g., 'power_draw_w')." },
+            "fallback_attributes":  { "type": "array", "items": { "type": "string" }, "description": "Try these attributes if primary is null (e.g., ['tdp_w'])." },
+            "from_types":           { "type": "array", "items": { "type": "string" }, "description": "Entity types to include. Use ['*'] for all types." },
+            "exclude_types":        { "type": "array", "items": { "type": "string" }, "description": "Entity types to exclude even if matched by from_types." },
+            "multiply_by_quantity": { "type": "boolean", "description": "true = multiply attribute value by slot quantity (e.g., 2× RAM kits)." }
+          }
+        },
+        "compare_to": {
+          "type": "object",
+          "required": ["mode"],
+          "properties": {
+            "mode":           { "type": "string", "enum": ["entity_attribute", "simulation_constraint", "fixed_value"] },
+            "entity_type":    { "type": "string", "description": "entity_attribute mode: which entity type holds the capacity." },
+            "attribute":      { "type": "string", "description": "entity_attribute mode: which attribute holds the capacity value." },
+            "safety_factor":  { "type": "number", "description": "Multiply capacity by this factor before comparing (e.g., 0.8 for 80% rule)." },
+            "constraint_key": { "type": "string", "description": "simulation_constraint mode: key from the constraints map passed to validateItems." },
+            "value":          { "type": "number", "description": "fixed_value mode: compare against this literal value." }
+          }
+        },
+        "operator": { "type": "string", "enum": ["<=", ">=", "<", ">", "=="] }
+      },
+      "examples": [{
+        "aggregate": { "function": "sum", "attribute": "power_draw_w", "fallback_attributes": ["tdp_w"], "from_types": ["*"], "exclude_types": ["psu"], "multiply_by_quantity": true },
+        "compare_to": { "mode": "entity_attribute", "entity_type": "psu", "attribute": "watt_output" },
+        "operator": "<="
+      }]
+    },
+
+    "Module": {
+      "type": "object",
+      "required": ["name", "ver", "inputs", "outputs", "blocks"],
+      "description": "RuleFlow2 module for declarative formula evaluation. Used in budgetPlan to express the anchor target calculation without hardcoded TypeScript.",
+      "properties": {
+        "name":    { "type": "string", "description": "Unique module name." },
+        "ver":     { "type": "string", "description": "Schema version string." },
+        "inputs":  { "type": "array", "items": { "$ref": "#/$defs/InputDecl" }, "description": "Input variable declarations. All must be provided at runtime." },
+        "outputs": { "type": "array", "items": { "type": "string" }, "description": "Output variable names. Must match the 'out' fields of blocks." },
+        "blocks":  { "type": "array", "items": { "$ref": "#/$defs/FormulaBlock" }, "description": "Computation steps. Currently only formula blocks are supported." }
+      },
+      "examples": [{
+        "name": "pc-builder-budget-plan", "ver": "1",
+        "inputs": [{ "name": "effectiveBudget", "type": "num" }, { "name": "entityCount", "type": "num" }],
+        "outputs": ["anchorTarget"],
+        "blocks": [{ "id": "anchor", "out": ["anchorTarget", "num"], "expr": "round($effectiveBudget * ceil($entityCount / 2) / $entityCount)" }]
+      }]
+    },
+
+    "InputDecl": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name":     { "type": "string" },
+        "type":     { "type": "string", "enum": ["num", "str", "bool"] },
+        "nullable": { "type": "boolean" },
+        "min":      { "type": "number" },
+        "max":      { "type": "number" }
+      }
+    },
+
+    "FormulaBlock": {
+      "type": "object",
+      "required": ["id", "out", "expr"],
+      "description": "A single formula computation. Use $varName to reference inputs or prior block outputs.",
+      "properties": {
+        "id":   { "type": "string", "description": "Block identifier." },
+        "out":  { "type": "array", "prefixItems": [{ "type": "string" }, { "type": "string", "enum": ["num", "str", "bool"] }], "minItems": 2, "maxItems": 2, "description": "[outputName, outputType]" },
+        "expr": { "type": "string", "description": "Expression string. Reference variables with $name. Functions: round(), ceil(), floor(), min(), max(), abs()." }
+      }
+    }
+
+  }
+}

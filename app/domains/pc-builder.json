@@ -1,4 +1,5 @@
 {
+  "$schema": "./schema.json",
   "entityTypes": ["motherboard", "cpu", "ram", "gpu", "psu", "ssd"],
   "entityTypeLabels": {
     "motherboard": "Motherboard",

@@ -1,41 +1,47 @@
 # Adding a New Domain
 
-A "domain" is a JSON config file that describes what entity types exist, how they relate, and how the engine should build suggestions. No handler code needs changing — only the JSON and one import line.
+A domain is a single JSON file that fully describes one use case — what entity types exist, how they relate, and how the engine builds suggestions. Switching domains requires changing **one import line** in `app/domains/index.ts`. No engine or server code needs modification.
+
+## Prerequisites
+
+- Your entities must be in the D1 database with the schema: `id, uuid, entity_type, code, name, status, <costColumn>, attributes (JSON)`
+- `publishedStatus` must match the `status` value of entities you want available for suggestion (default: `"published"`)
+
+---
 
 ## Step 1 — Create the domain JSON
 
-Create `app/domains/<your-domain>.json`. Minimum required fields:
+Create `app/domains/<your-domain>.json` and add the schema reference for editor autocomplete and AI assistance:
 
 ```json
 {
-  "entityTypes":      ["type_a", "type_b", "type_c"],
-  "entityTypeLabels": { "type_a": "Label A", "type_b": "Label B", "type_c": "Label C" },
+  "$schema": "./schema.json",
 
-  "fillOrder":    ["type_a", "type_b", "type_c"],
-  "selectionOrder": ["type_b", "type_c"],
+  "entityTypes":      ["part_a", "part_b", "part_c"],
+  "entityTypeLabels": { "part_a": "Part A", "part_b": "Part B", "part_c": "Part C" },
 
-  "maxPerType":   { "type_a": 1, "type_b": 1, "type_c": 1 },
+  "fillOrder":      ["part_a", "part_b", "part_c"],
+  "selectionOrder": ["part_b", "part_c"],
 
-  "requiredTypes": ["type_a", "type_b"],
+  "maxPerType": { "part_a": 1, "part_b": 1, "part_c": 1 },
+  "dynamicMaxPerType": {},
 
-  "anchorType":    "type_a",
-  "capacityType":  "type_c",
-  "capacityAttribute": "watt_output",
-  "loadAttributes":    ["power_draw_w"],
-  "capacityFactor":    0.8,
+  "anchorType":   "part_a",
+  "requiredTypes": ["part_a", "part_b"],
 
-  "costAttribute":  "unit_cost",
-  "costPrecision":  0,
+  "costAttribute":   "unit_cost",
+  "costColumn":      "unit_cost",
+  "publishedStatus": "published",
+  "costPrecision":   0,
 
-  "aggregateGuardTypes": ["type_c"],
-  "aggregateDisplay":    { "primary": "AGG_POWER_CAPACITY", "safety": null },
+  "aggregateGuardTypes": [],
+  "aggregateDisplay":    { "primary": "AGG_MAIN", "safety": null },
+
+  "fillStrategy": "backtrack",
 
   "fetchLimits": {
-    "anchor":     60,
-    "anchorNear": 20,
-    "capacity":   50,
-    "core":       25,
-    "coreCheap":  25
+    "anchor": 60, "anchorNear": 20,
+    "capacity": 50, "core": 25, "coreCheap": 25
   },
 
   "rules": []
@@ -46,16 +52,36 @@ Create `app/domains/<your-domain>.json`. Minimum required fields:
 
 | Field | ความหมาย |
 |---|---|
-| `fillOrder` | ลำดับที่ engine เลือก entity (ส่งผลต่อ BOM line number ด้วย) |
-| `selectionOrder` | ลำดับที่ backtrack fill ทำงาน (ไม่รวม `anchorType`) |
-| `anchorType` | entity หลักที่กำหนด tier ของทั้ง build — engine ลองทุก anchor แล้วเลือก fit ที่ดีสุด |
-| `capacityType` | entity ที่ทำหน้าที่รองรับ load (เช่น PSU) — เลือก cheapest ที่รองรับ load ได้ |
-| `capacityFactor` | `totalLoad / capacityFactor` = minimum capacity (0.8 = 80% rule) |
-| `fetchLimits` | จำนวน candidates ที่ดึงจาก DB ต่อ type — เพิ่มถ้าต้องการ accuracy สูงขึ้น |
+| `anchorType` | entity หลักที่กำหนด tier ของทั้ง build — รับงบประมาณก้อนใหญ่ที่สุด |
+| `fillOrder` | ลำดับ entity ใน BOM output |
+| `selectionOrder` | ลำดับที่ backtrack fill เลือก core entities (ไม่รวม anchorType และ capacityType) |
+| `fetchLimits` | จำนวน rows ที่ดึงจาก D1 ต่อ category — เพิ่มเพื่อ accuracy สูงขึ้น (กระทบ billing) |
+| `costColumn` | ชื่อ column ใน DB สำหรับ cost (ใช้ใน SQL ORDER BY / WHERE) |
+| `publishedStatus` | ค่า `status` ของ entity ที่พร้อมใช้งาน |
 
-## Step 2 — Optional: dynamic slot counts
+---
 
-ถ้า entity บางประเภทมีจำนวนสล็อตแบบ dynamic (เช่น RAM ขึ้นอยู่กับ motherboard):
+## Step 2 — Capacity constraint (optional)
+
+ถ้า domain มี entity ที่ทำหน้าที่รองรับ load (เช่น PSU รองรับ power, battery รองรับ watt-hour) ให้เพิ่ม:
+
+```json
+"capacityType":      "psu",
+"capacityAttribute": "watt_output",
+"loadAttributes":    ["power_draw_w", "tdp_w"],
+"capacityFactor":    0.8,
+
+"aggregateGuardTypes": ["psu"]
+```
+
+- `loadAttributes` — อ่านค่าแรกที่ไม่ null ต่อ entity (fallback chain)
+- `capacityFactor` — `totalLoad / capacityFactor` = minimum capacity (0.8 = 80% rule)
+
+---
+
+## Step 3 — Dynamic slot counts (optional)
+
+ถ้า entity บางประเภทมีจำนวน slot แบบ dynamic (เช่น RAM ขึ้นอยู่กับ motherboard):
 
 ```json
 "dynamicMaxPerType": {
@@ -69,9 +95,16 @@ Create `app/domains/<your-domain>.json`. Minimum required fields:
 }
 ```
 
-## Step 3 — Optional: post-fill types
+- `source_attribute` — attribute บน `source_type` ที่เก็บจำนวน slot
+- `capacity_attribute` — attribute บน entity นี้ที่นับว่าใช้กี่ slot ต่อชิ้น (เช่น dual-channel kit = 2 modules)
+- `sort_attribute` — attribute ที่ใช้เรียงลำดับตอนเลือก (สูงสุดก่อน)
+- `fallback` — ค่า default ก่อนที่ source_type ถูกเลือก
 
-ถ้ามี entity ที่ควรเติมหลัง backtrack fill เสร็จ (เช่น SSD):
+---
+
+## Step 4 — Post-fill phases (optional)
+
+สำหรับ entity ที่ควรเลือกเป็นสองรอบ (เช่น SSD: เอาราคาถูกก่อน แล้ว upgrade ถ้างบเหลือ):
 
 ```json
 "postFillTypes": [
@@ -80,18 +113,45 @@ Create `app/domains/<your-domain>.json`. Minimum required fields:
 ]
 ```
 
-- `upgradeExisting: false` (default) — เติมครั้งแรกหลัง backtrack
-- `upgradeExisting: true` — phase 3: upgrade ถ้า budget เหลือ
+- `upgradeExisting: false` (default) — เติม slot ที่ว่างหลัง backtrack
+- `upgradeExisting: true` — แทนที่ของที่มีอยู่ถ้างบเหลือและเจอตัวที่ดีกว่า
 
-## Step 4 — Add compatibility rules
+---
 
-ใส่ใน `"rules": [...]` ทุก rule ต้องมี field เหล่านี้:
+## Step 5 — Budget formula (optional)
+
+ค่า default คือ `round(effectiveBudget * ceil(entityCount/2) / entityCount)` ซึ่งให้งบครึ่งหนึ่งกับ anchor entity ถ้าต้องการสูตรอื่น:
+
+```json
+"budgetPlan": {
+  "name": "my-domain-budget-plan", "ver": "1",
+  "inputs": [
+    { "name": "effectiveBudget", "type": "num" },
+    { "name": "entityCount",     "type": "num" }
+  ],
+  "outputs": ["anchorTarget"],
+  "blocks": [
+    { "id": "anchor", "out": ["anchorTarget", "num"], "expr": "round($effectiveBudget * 0.4)" }
+  ]
+}
+```
+
+สูตรใน `expr` ใช้ `$varName` อ้าง input และ output ของ block ก่อนหน้า  
+ฟังก์ชันที่ใช้ได้: `round()`, `ceil()`, `floor()`, `min()`, `max()`, `abs()`
+
+---
+
+## Step 6 — Compatibility rules
+
+ใส่ใน `"rules": [...]` แต่ละ rule ต้องมี `id` ไม่ซ้ำกัน
+
+### Pairwise rule — เปรียบ entity คู่ต่อคู่
 
 ```json
 {
   "id": 1,
-  "code": "UNIQUE_RULE_CODE",
-  "name": "Human readable name",
+  "code": "SOCKET_MATCH",
+  "name": "CPU and Motherboard must share the same socket",
   "check_type": "pairwise",
   "severity": "error",
   "priority": 200,
@@ -103,40 +163,95 @@ Create `app/domains/<your-domain>.json`. Minimum required fields:
     "target_types": ["motherboard"]
   },
   "condition": {
-    "==": [
-      { "var": "source.attributes.socket" },
-      { "var": "target.attributes.socket" }
-    ]
+    "==": [{ "var": "source.attributes.socket" }, { "var": "target.attributes.socket" }]
   },
   "message": "Socket mismatch: :source.attributes.socket ≠ :target.attributes.socket",
-  "resolution": "Select components with matching socket"
+  "resolution": "Select a CPU and Motherboard with the same socket"
 }
 ```
 
-`check_type` มีสองแบบ:
+`match_by` options:
 
-| check_type | ใช้เมื่อ |
+| match_by | ใช้เมื่อ |
 |---|---|
-| `pairwise` | เปรียบ entity คู่ต่อคู่ (socket match, RAM type match) |
-| `aggregate` | รวม attribute จากหลาย entity แล้วเทียบกับ capacity (power, RAM slots) |
+| `shared_attribute` | ทั้งคู่ใช้ attribute key เดียวกันและค่าต้องตรงกัน |
+| `attribute_pair` | source กับ target ใช้ attribute คนละชื่อแต่ค่าต้องตรงกัน |
+| `attribute_range` | attribute ของ source ต้องอยู่ใน range ของ target |
 
-ดู `pc-builder.json` เป็น reference สำหรับ aggregate rule ที่สมบูรณ์
+### Aggregate rule — รวมค่าจากหลาย entity แล้วเทียบกับ capacity
 
-## Step 5 — Wire up in `app/domains/index.ts`
-
-แก้ไฟล์นี้ให้ชี้ไปที่ JSON ใหม่:
-
-```ts
-import domainJson from './<your-domain>.json'
+```json
+{
+  "id": 5,
+  "code": "AGG_POWER_CAPACITY",
+  "name": "Total Power Must Not Exceed PSU",
+  "check_type": "aggregate",
+  "severity": "error",
+  "priority": 200,
+  "is_active": true,
+  "condition": {
+    "aggregate": {
+      "function": "sum",
+      "attribute": "power_draw_w",
+      "fallback_attributes": ["tdp_w"],
+      "from_types": ["*"],
+      "exclude_types": ["psu"],
+      "multiply_by_quantity": true
+    },
+    "compare_to": {
+      "mode": "entity_attribute",
+      "entity_type": "psu",
+      "attribute": "watt_output"
+    },
+    "operator": "<="
+  },
+  "message": "Total power draw :aggregate_value W exceeds PSU capacity :capacity_value W",
+  "resolution": "Select a PSU with wattage above :aggregate_value W"
+}
 ```
 
-เท่านี้ engine, API handler, และ frontend จะใช้ domain ใหม่ทันที ไม่มีไฟล์อื่นต้องแตะ
+### Tier rule — entity high-end ต้องใช้คู่กับ entity ที่รองรับ
+
+```json
+"tierRules": [
+  {
+    "name": "HIGH_BW_GPU_REQUIRES_HIGH_CACHE_CPU",
+    "provider": {
+      "entity_type": "gpu",
+      "condition": { "and": [
+        { ">": [{ "var": "attributes.memory_bus_bit" }, 312] },
+        { ">": [{ "var": "attributes.vram_gb" }, 16] }
+      ]}
+    },
+    "requires": [
+      { "entity_type": "cpu", "condition": { ">": [{ "var": "attributes.l3_cache_mb" }, 32] } }
+    ]
+  }
+]
+```
+
+---
+
+## Step 7 — Wire up
+
+แก้ไฟล์ `app/domains/index.ts` บรรทัดเดียว:
+
+```ts
+import domainJson from './<your-domain>.json'   // ← เปลี่ยนตรงนี้
+```
+
+engine, API handler, และ frontend ใช้ domain ใหม่ทันที ไม่มีไฟล์อื่นต้องแตะ
+
+---
 
 ## Checklist
 
-- [ ] สร้าง `app/domains/<your-domain>.json` ครบทุก required field
-- [ ] `anchorType` และ `capacityType` อยู่ใน `entityTypes`
-- [ ] `fillOrder` และ `selectionOrder` ครอบคลุม entity types ที่ต้องการ
+- [ ] สร้าง `app/domains/<your-domain>.json` ครบ required fields
+- [ ] `$schema` ชี้ไปที่ `./schema.json`
+- [ ] `anchorType` และ `capacityType` (ถ้ามี) อยู่ใน `entityTypes`
+- [ ] `fillOrder` และ `selectionOrder` ครอบคลุม entity types ทั้งหมด
 - [ ] `requiredTypes` ใส่ทุก type ที่ขาดไม่ได้
-- [ ] rule id ไม่ซ้ำกัน
+- [ ] `aggregateDisplay.primary` ตรงกับ `code` ของ rule ที่มีอยู่
+- [ ] rule `id` ไม่ซ้ำกันภายใน domain
+- [ ] entity types ใน rule `scope`, `from_types`, `exclude_types` ตรงกับ `entityTypes`
 - [ ] อัปเดต import ใน `app/domains/index.ts`
