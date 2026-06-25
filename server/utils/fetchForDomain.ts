@@ -2,7 +2,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 import type { DomainConfig } from '~/engine/suggest'
 import type { SlotItem } from '~/engine/suggest'
 import type { Entity } from '~/data/types'
-import { fetchCandidates, fetchCheapestCandidates, fetchByIds } from './db'
+import { fetchCandidates, fetchCheapestCandidates, fetchByIds, dbConfigFrom } from './db'
 
 const DEFAULT_FETCH_LIMITS = {
   anchor:     60,
@@ -26,6 +26,7 @@ export async function fetchForDomain(
 ): Promise<Entity[]> {
   const { budget, pinnedEntities, excluded, blockedIds } = input
   const limits = { ...DEFAULT_FETCH_LIMITS, ...cfg.fetchLimits }
+  const dbCfg = dbConfigFrom(cfg)
 
   const maxCost = budget ?? 999_999_999
   const anchorType   = cfg.anchorType   ?? cfg.fillOrder[0]!
@@ -53,17 +54,17 @@ export async function fetchForDomain(
     Promise.all(
       cfg.entityTypes.map((type) => {
         if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return Promise.resolve([] as Entity[])
-        if (type === anchorType)   return fetchCandidates(DB, type, effectiveMax, blockedIds, limits.anchor)
-        if (type === capacityType) return fetchCandidates(DB, type, maxCost,      blockedIds, limits.capacity)
-        return fetchCandidates(DB, type, perSlot, blockedIds, limits.core)
+        if (type === anchorType)   return fetchCandidates(DB, type, effectiveMax, blockedIds, limits.anchor,     dbCfg)
+        if (type === capacityType) return fetchCandidates(DB, type, maxCost,      blockedIds, limits.capacity,   dbCfg)
+        return fetchCandidates(DB, type, perSlot, blockedIds, limits.core, dbCfg)
       }),
     ),
     anchorFillable
-      ? fetchCandidates(DB, anchorType, anchorTarget, blockedIds, limits.anchorNear)
+      ? fetchCandidates(DB, anchorType, anchorTarget, blockedIds, limits.anchorNear, dbCfg)
       : Promise.resolve([] as Entity[]),
     Promise.all(
       coreFilledTypes.map((type) =>
-        fetchCheapestCandidates(DB, type, perSlot, blockedIds, limits.coreCheap),
+        fetchCheapestCandidates(DB, type, perSlot, blockedIds, limits.coreCheap, dbCfg),
       ),
     ),
   ])

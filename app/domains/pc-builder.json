@@ -28,6 +28,8 @@
   "aggregateDisplay":    { "primary": "AGG_POWER_CAPACITY", "safety": "AGG_POWER_SAFETY" },
   "requiredTypes":       ["cpu", "motherboard", "ram", "psu"],
   "costAttribute":       "unit_cost",
+  "costColumn":          "unit_cost",
+  "publishedStatus":     "published",
   "costPrecision":       0,
   "anchorType":          "gpu",
   "capacityType":        "psu",
@@ -35,12 +37,27 @@
   "loadAttributes":      ["power_draw_w", "tdp_w"],
   "capacityFactor":      0.8,
 
+  "fillStrategy": "backtrack",
+
   "fetchLimits": {
     "anchor":     60,
     "anchorNear": 20,
     "capacity":   50,
     "core":       25,
     "coreCheap":  25
+  },
+
+  "budgetPlan": {
+    "name": "pc-builder-budget-plan",
+    "ver":  "1",
+    "inputs": [
+      { "name": "effectiveBudget", "type": "num" },
+      { "name": "entityCount",     "type": "num" }
+    ],
+    "outputs": ["anchorTarget"],
+    "blocks": [
+      { "id": "anchor", "out": ["anchorTarget", "num"], "expr": "round($effectiveBudget * ceil($entityCount / 2) / $entityCount)" }
+    ]
   },
 
   "tierRules": [

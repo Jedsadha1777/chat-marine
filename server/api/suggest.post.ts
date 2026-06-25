@@ -2,6 +2,7 @@ import { buildSuggestion, validateItems, aggregateDetailFor, buildBom, totalCost
 import type { SlotItem } from '~/engine/suggest'
 import { DOMAIN } from '~/domains'
 import { fetchForDomain, fetchByIds } from '../utils/fetchForDomain'
+import { dbConfigFrom } from '../utils/db'
 
 interface SuggestRequest {
   budget: number | null
@@ -21,8 +22,9 @@ export default defineEventHandler(async (event) => {
   const DB = event.context.cloudflare?.env?.DB
   if (!DB) throw createError({ statusCode: 503, message: 'D1 database not available' })
 
+  const dbCfg = dbConfigFrom(DOMAIN)
   const allPinnedIds = Object.values(pinnedReq).flat().map((p) => p.id)
-  const pinnedById = new Map((await fetchByIds(DB, allPinnedIds)).map((e) => [e.id, e]))
+  const pinnedById = new Map((await fetchByIds(DB, allPinnedIds, dbCfg)).map((e) => [e.id, e]))
 
   const pinnedEntities: Record<string, SlotItem[]> = Object.fromEntries(
     DOMAIN.entityTypes.map((type) => [
