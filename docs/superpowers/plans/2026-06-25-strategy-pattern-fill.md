@@ -1,0 +1,972 @@
+# Strategy Pattern — Fill Algorithm Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** แยก fill algorithm ออกจาก `suggest.ts` เป็น pluggable strategy ที่ domain เลือกได้ผ่าน `"fillStrategy"` ใน JSON config โดยไม่ทำลาย API ปัจจุบัน
+
+**Architecture:** แยก types และ helper utilities ออกมาก่อนเพื่อหลีกเลี่ยง circular import จากนั้นย้าย fill algorithm ทั้งหมดเข้า `BacktrackFillStrategy` class แล้วให้ `buildSuggestion` dispatch ผ่าน registry `suggest.ts` ยังคง re-export ทุกอย่างที่เคย export เพื่อไม่ให้ downstream เสีย
+
+**Tech Stack:** TypeScript, Nuxt 4 (shared `app/engine/` ใช้ได้ทั้ง server และ client)
+
+---
+
+## Dependency graph หลังทำเสร็จ (ไม่มี cycle)
+
+```
+data/types
+  └─ engine-types
+       └─ pairwise, engine-helpers
+            └─ strategies/types
+                 └─ strategies/backtrack
+                      └─ strategies/index
+                           └─ suggest (public API)
+```
+
+---
+
+## File Structure
+
+| Action | Path | หน้าที่ |
+|---|---|---|
+| Create | `app/engine/engine-types.ts` | interfaces ทั้งหมด (DomainConfig, SlotItem ฯลฯ) |
+| Create | `app/engine/engine-helpers.ts` | pure utility functions (unitCost, cachedPairwise ฯลฯ) |
+| Create | `app/engine/strategies/types.ts` | FillStrategy interface + FillInput type |
+| Create | `app/engine/strategies/backtrack.ts` | BacktrackFillStrategy — algorithm ทั้งหมดอยู่ที่นี่ |
+| Create | `app/engine/strategies/index.ts` | registry + getStrategy() |
+| Modify | `app/engine/suggest.ts` | strip fill logic, เพิ่ม re-exports, dispatch ผ่าน strategy |
+| Modify | `app/domains/pc-builder.json` | เพิ่ม `"fillStrategy": "backtrack"` |
+| Modify | `docs/adding-a-domain.md` | เพิ่มหัวข้อ Custom Fill Strategy |
+
+---
+
+## Task 1 — สร้าง `engine-types.ts`
+
+**Files:**
+- Create: `app/engine/engine-types.ts`
+
+- [ ] **Step 1: สร้างไฟล์ types**
+
+```typescript
+// app/engine/engine-types.ts
+import type { CompatibilityRule } from '~/data/types'
+
+export interface TierRule {
+  name: string
+  provider: { entity_type: string; condition: Record<string, unknown> }
+  requires: Array<{ entity_type: string; condition: Record<string, unknown> }>
+}
+
+export interface DynamicMaxCfg {
+  source_type: string
+  source_attribute: string
+  capacity_attribute?: string
+  sort_attribute?: string
+  fallback: number
+}
+
+export interface PostFillCfg {
+  type: string
+  preferAttribute?: string
+  maxAttrValue?: number
+  minAttrValue?: number
+  upgradeExisting?: boolean
+}
+
+export interface FetchLimits {
+  anchor: number
+  anchorNear: number
+  capacity: number
+  core: number
+  coreCheap: number
+}
+
+export interface DomainConfig {
+  fillOrder: string[]
+  entityTypes: string[]
+  entityTypeLabels: Record<string, string>
+  maxPerType: Partial<Record<string, number>>
+  dynamicMaxPerType: Partial<Record<string, DynamicMaxCfg>>
+  aggregateGuardTypes: string[]
+  aggregateDisplay: { primary: string; safety: string | null }
+  requiredTypes: string[]
+  costAttribute: string
+  costPrecision: number
+  rules: CompatibilityRule[]
+  tierRules?: TierRule[]
+  anchorType?: string
+  selectionOrder?: string[]
+  capacityType?: string
+  capacityAttribute?: string
+  loadAttributes?: string[]
+  capacityFactor?: number
+  postFillTypes?: PostFillCfg[]
+  fetchLimits?: FetchLimits
+  fillStrategy?: string
+}
+
+export interface SlotItem {
+  entity: import('~/data/types').Entity
+  quantity: number
+}
+
+export interface SuggestInput {
+  budget: number | null
+  pinned?: Partial<Record<string, SlotItem[]>>
+  excluded?: Partial<Record<string, boolean>>
+  blockedIds?: Iterable<number>
+}
+
+export interface SuggestResult {
+  slots: Record<string, SlotItem[]>
+  overflow: boolean
+}
+```
+
+- [ ] **Step 2: ตรวจว่าไม่มี syntax error**
+
+```bash
+cd chat-marine && npx tsc --noEmit --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler app/engine/engine-types.ts 2>&1 | grep -v "Cannot find module"
+```
+
+Expected: ไม่มี error (ยกเว้น "Cannot find module" จาก Nuxt paths ซึ่งปกติ)
+
+---
+
+## Task 2 — สร้าง `engine-helpers.ts`
+
+**Files:**
+- Create: `app/engine/engine-helpers.ts`
+- Reference: `app/engine/suggest.ts` (copy functions จากที่นี่)
+
+- [ ] **Step 1: สร้างไฟล์ helpers — copy จาก `suggest.ts`**
+
+```typescript
+// app/engine/engine-helpers.ts
+import type { Entity, CompatibilityRule, SimulationItem } from '~/data/types'
+import type { DomainConfig, SlotItem } from './engine-types'
+import { runPairwise } from './pairwise'
+
+export function unitCost(e: Entity, cfg: DomainConfig): number {
+  const raw = e.attributes[cfg.costAttribute] ?? 0
+  return parseFloat(Number(raw).toFixed(cfg.costPrecision))
+}
+
+export function slotCost(s: SlotItem, cfg: DomainConfig): number {
+  return unitCost(s.entity, cfg) * s.quantity
+}
+
+export function emptySlots(cfg: DomainConfig): Record<string, SlotItem[]> {
+  return Object.fromEntries(cfg.entityTypes.map((t) => [t, []]))
+}
+
+export function toSimItems(slots: Record<string, SlotItem[]>, cfg: DomainConfig): SimulationItem[] {
+  let id = 0
+  return cfg.entityTypes.flatMap((t) =>
+    (slots[t] ?? []).map((s) => ({ id: ++id, entity: s.entity, quantity: s.quantity })),
+  )
+}
+
+export function maxFor(type: string, cfg: DomainConfig, slots?: Record<string, SlotItem[]>): number {
+  if (cfg.maxPerType[type] !== undefined) return cfg.maxPerType[type]!
+  const dynCfg = cfg.dynamicMaxPerType[type]
+  if (dynCfg && slots) {
+    const sourceItems = slots[dynCfg.source_type] ?? []
+    if (sourceItems.length > 0) {
+      const val = sourceItems[0]?.entity.attributes[dynCfg.source_attribute]
+      if (val !== undefined && val !== null) return Number(val)
+    }
+    return dynCfg.fallback
+  }
+  return Infinity
+}
+
+export function usedCapacity(type: string, items: SlotItem[], cfg: DomainConfig): number {
+  const dynCfg = cfg.dynamicMaxPerType[type]
+  if (!dynCfg?.capacity_attribute) {
+    return items.reduce((sum, s) => sum + s.quantity, 0)
+  }
+  const attr = dynCfg.capacity_attribute
+  return items.reduce((sum, s) => sum + Number(s.entity.attributes[attr] ?? 1) * s.quantity, 0)
+}
+
+export function uniqueEntities(entities: Entity[]): Entity[] {
+  const seen = new Set<number>()
+  return entities.filter((e) => { if (seen.has(e.id)) return false; seen.add(e.id); return true })
+}
+
+const _pwCacheByRules = new WeakMap<CompatibilityRule[], Map<string, boolean>>()
+
+export function cachedPairwise(candidate: Entity, others: Entity[], rules: CompatibilityRule[]): boolean {
+  let cache = _pwCacheByRules.get(rules)
+  if (!cache) { cache = new Map(); _pwCacheByRules.set(rules, cache) }
+
+  const errorRules = rules.filter(
+    (r) => r.is_active && r.check_type === 'pairwise' && r.severity === 'error',
+  )
+  const uniqueOthers = uniqueEntities(others)
+
+  for (const rule of errorRules) {
+    for (const other of uniqueOthers) {
+      const key = `${rule.id}:${candidate.id}:${other.id}`
+      if (!cache.has(key)) {
+        const ok = runPairwise(rule, [candidate, other]).length === 0
+        cache.set(key, ok)
+        cache.set(`${rule.id}:${other.id}:${candidate.id}`, ok)
+      }
+      if (!cache.get(key)) return false
+    }
+  }
+  return true
+}
+
+// ── Internal helpers used by fill strategies ───────────────────────────────
+
+export function entityLoad(e: Entity, cfg: DomainConfig): number {
+  const attrs = cfg.loadAttributes ?? ['power_draw_w', 'tdp_w']
+  const val = attrs.map((a) => e.attributes[a]).find((v) => v !== null && v !== undefined) ?? 0
+  return Number(val)
+}
+
+export function totalLoadOf(entities: Entity[], cfg: DomainConfig): number {
+  return entities.reduce((sum, e) => sum + entityLoad(e, cfg), 0)
+}
+
+export function findCheapestCapacity(
+  available: Entity[],
+  minCapacity: number,
+  maxCost: number,
+  cfg: DomainConfig,
+): Entity | null {
+  const capType: string = cfg.capacityType ?? cfg.fillOrder[cfg.fillOrder.length - 1]!
+  const capAttr = cfg.capacityAttribute ?? 'watt_output'
+  return available
+    .filter((e) =>
+      e.entity_type === capType &&
+      Number(e.attributes[capAttr] ?? 0) >= minCapacity &&
+      unitCost(e, cfg) <= maxCost
+    )
+    .sort((a, b) => unitCost(a, cfg) - unitCost(b, cfg))[0] ?? null
+}
+```
+
+---
+
+## Task 3 — สร้าง `strategies/types.ts`
+
+**Files:**
+- Create: `app/engine/strategies/types.ts`
+
+- [ ] **Step 1: สร้าง FillStrategy interface**
+
+```typescript
+// app/engine/strategies/types.ts
+import type { Entity } from '~/data/types'
+import type { DomainConfig, SlotItem, SuggestResult } from '../engine-types'
+
+export interface FillInput {
+  budget: number          // Infinity ถ้าไม่มีงบ (ปรับมาจาก null แล้ว)
+  pinned: Record<string, SlotItem[]>
+  excluded: Record<string, boolean>
+  blockedIds: Set<number>
+}
+
+export interface FillStrategy {
+  fill(entities: Entity[], cfg: DomainConfig, input: FillInput): SuggestResult
+}
+```
+
+---
+
+## Task 4 — สร้าง `strategies/backtrack.ts`
+
+**Files:**
+- Create: `app/engine/strategies/backtrack.ts`
+- Reference: `app/engine/suggest.ts` lines 155–450 (specChainFill, backtrackFill, tryFillPackage)
+
+นี่คือขั้นตอนที่ใหญ่ที่สุด — ย้าย fill algorithm ทั้งหมดมาที่นี่ในรูป class
+
+- [ ] **Step 1: สร้างไฟล์และ copy algorithm จาก `suggest.ts`**
+
+```typescript
+// app/engine/strategies/backtrack.ts
+import type { Entity, CompatibilityRule } from '~/data/types'
+import type { DomainConfig, SlotItem, SuggestResult, TierRule } from '../engine-types'
+import type { FillStrategy, FillInput } from './types'
+import {
+  unitCost, slotCost, emptySlots, cachedPairwise,
+  entityLoad, totalLoadOf, findCheapestCapacity,
+} from '../engine-helpers'
+import { evalLogic } from '../pairwise'
+
+// ── private helper ──────────────────────────────────────────────────────────
+
+function getTierConditions(
+  provider: Entity,
+  rules: TierRule[],
+  requiredType: string,
+): Record<string, unknown>[] {
+  return rules
+    .filter(r =>
+      r.provider.entity_type === provider.entity_type &&
+      evalLogic(r.provider.condition, { attributes: provider.attributes })
+    )
+    .flatMap(r =>
+      r.requires.filter(req => req.entity_type === requiredType).map(req => req.condition)
+    )
+}
+
+function backtrackFill(
+  selectionOrder: string[],
+  index: number,
+  chosen: Record<string, Entity>,
+  remainingBudget: number,
+  context: Entity[],
+  anchorCtx: Entity[],
+  tierCondsPerType: Record<string, Array<Record<string, unknown>>>,
+  available: Entity[],
+  rules: CompatibilityRule[],
+  cfg: DomainConfig,
+  toFill: Set<string>,
+  capacityFactor: number,
+  capacityType: string,
+): Record<string, Entity> | null {
+  if (index === selectionOrder.length) return chosen
+
+  const type: string = selectionOrder[index]!
+  const recurse = (next: Record<string, Entity>, budget: number) =>
+    backtrackFill(selectionOrder, index + 1, next, budget, context, anchorCtx, tierCondsPerType, available, rules, cfg, toFill, capacityFactor, capacityType)
+
+  if (!toFill.has(type)) return recurse(chosen, remainingBudget)
+
+  if (type === capacityType) {
+    const loadItems = [...context, ...anchorCtx, ...Object.values(chosen)]
+      .filter((e, i, arr) => arr.indexOf(e) === i && e.entity_type !== capacityType)
+    const cap = findCheapestCapacity(available, totalLoadOf(loadItems, cfg) / capacityFactor, remainingBudget, cfg)
+    if (!cap) return null
+    return { ...chosen, [type]: cap }
+  }
+
+  const allCtx = [...context, ...anchorCtx, ...Object.values(chosen)]
+  const tierConds: Array<Record<string, unknown>> = tierCondsPerType[type] ?? []
+  const pairwiseOk = available.filter((e) =>
+    e.entity_type === type && cachedPairwise(e, allCtx, rules)
+  )
+  const satisfiesTier = (e: Entity): boolean =>
+    tierConds.every((c: Record<string, unknown>) => evalLogic(c, { attributes: e.attributes }))
+  const sortAttrKey = cfg.dynamicMaxPerType[type]?.sort_attribute
+  const capAttrKey  = cfg.dynamicMaxPerType[type]?.capacity_attribute
+  const byPreference = (a: Entity, b: Entity): number => {
+    if (sortAttrKey) {
+      const diff = Number(b.attributes[sortAttrKey] ?? 0) - Number(a.attributes[sortAttrKey] ?? 0)
+      if (diff !== 0) return diff
+    }
+    if (capAttrKey) {
+      const diff = Number(b.attributes[capAttrKey] ?? 1) - Number(a.attributes[capAttrKey] ?? 1)
+      if (diff !== 0) return diff
+    }
+    return unitCost(b, cfg) - unitCost(a, cfg)
+  }
+  const remainingSlots = selectionOrder.slice(index).filter(t => toFill.has(t) && t !== capacityType).length
+  const shareMax = remainingSlots > 0 ? Math.floor(remainingBudget / remainingSlots) : remainingBudget
+  const inShare  = (e: Entity) => unitCost(e, cfg) <= shareMax
+  const candidates = [
+    ...pairwiseOk.filter(e => inShare(e)  && satisfiesTier(e)).sort(byPreference),
+    ...pairwiseOk.filter(e => inShare(e)  && !satisfiesTier(e)).sort(byPreference),
+    ...pairwiseOk.filter(e => !inShare(e) && satisfiesTier(e)).sort(byPreference),
+    ...pairwiseOk.filter(e => !inShare(e) && !satisfiesTier(e)).sort(byPreference),
+  ]
+
+  for (const candidate of candidates) {
+    const cost = unitCost(candidate, cfg)
+    if (cost > remainingBudget) continue
+    const result = recurse({ ...chosen, [type]: candidate }, remainingBudget - cost)
+    if (result !== null) return result
+  }
+
+  return null
+}
+
+function tryFillPackage(
+  anchorEntity: Entity | null,
+  context: Entity[],
+  available: Entity[],
+  rules: CompatibilityRule[],
+  cfg: DomainConfig,
+  budget: number,
+  capacityFactor: number,
+  toFill: Set<string>,
+): Record<string, SlotItem[]> | null {
+  const anchorType: string = cfg.anchorType ?? cfg.fillOrder[0]!
+  const capacityType: string = cfg.capacityType ?? cfg.fillOrder[cfg.fillOrder.length - 1]!
+  const capAttr = cfg.capacityAttribute ?? 'watt_output'
+
+  const resolvedAnchor: Entity | null = toFill.has(anchorType)
+    ? anchorEntity
+    : (context.find((e) => e.entity_type === anchorType) ?? null)
+
+  let budgetAfterAnchor = budget
+  if (toFill.has(anchorType) && anchorEntity !== null) {
+    const cost = unitCost(anchorEntity, cfg)
+    if (cost > budget) return null
+    budgetAfterAnchor -= cost
+  }
+
+  const anchorCtx: Entity[] = resolvedAnchor ? [resolvedAnchor] : []
+  const tierCondsPerType: Record<string, Array<Record<string, unknown>>> = {}
+  if (resolvedAnchor) {
+    for (const type of cfg.entityTypes) {
+      const conds = getTierConditions(resolvedAnchor, cfg.tierRules ?? [], type)
+      if (conds.length > 0) tierCondsPerType[type] = conds
+    }
+  }
+
+  const selectionOrder = cfg.selectionOrder ?? cfg.fillOrder.filter((t) => t !== anchorType)
+
+  const minPostFillReserve = (cfg.postFillTypes ?? [])
+    .filter((pf) => !pf.upgradeExisting && toFill.has(pf.type))
+    .reduce((reserve, pf) => {
+      const cheapest = available
+        .filter((e) => e.entity_type === pf.type)
+        .reduce((min, e) => Math.min(min, unitCost(e, cfg)), Infinity)
+      return reserve + (isFinite(cheapest) ? cheapest : 0)
+    }, 0)
+
+  const chosen = backtrackFill(
+    selectionOrder, 0, {}, budgetAfterAnchor - minPostFillReserve,
+    context, anchorCtx, tierCondsPerType, available, rules, cfg, toFill, capacityFactor, capacityType,
+  )
+  if (chosen === null) return null
+
+  const quantities: Record<string, number> = {}
+  const spentInBacktrack = Object.entries(chosen)
+    .filter(([t]) => toFill.has(t))
+    .reduce((sum, [, e]) => sum + unitCost(e, cfg), 0)
+  let remaining = budgetAfterAnchor - spentInBacktrack
+
+  const postFilled: Record<string, SlotItem[]> = {}
+  const allCtxForPost = [...context, ...anchorCtx, ...Object.values(chosen)]
+    .filter((e, i, arr) => arr.indexOf(e) === i)
+
+  for (const { type, preferAttribute, maxAttrValue, minAttrValue, upgradeExisting } of cfg.postFillTypes ?? []) {
+    if (upgradeExisting) continue
+    if (!toFill.has(type)) continue
+    const postCandidates = available
+      .filter((e) => {
+        if (e.entity_type !== type || !cachedPairwise(e, allCtxForPost, rules)) return false
+        if (preferAttribute) {
+          const v = Number(e.attributes[preferAttribute] ?? 0)
+          if (maxAttrValue !== undefined && v > maxAttrValue) return false
+          if (minAttrValue !== undefined && v < minAttrValue) return false
+        }
+        return true
+      })
+      .sort((a, b) => {
+        if (preferAttribute) {
+          const diff = Number(b.attributes[preferAttribute] ?? 0) - Number(a.attributes[preferAttribute] ?? 0)
+          if (diff !== 0) return diff
+        }
+        return unitCost(b, cfg) - unitCost(a, cfg)
+      })
+    for (const candidate of postCandidates) {
+      if (unitCost(candidate, cfg) <= remaining) {
+        postFilled[type] = [{ entity: candidate, quantity: 1 }]
+        remaining -= unitCost(candidate, cfg)
+        break
+      }
+    }
+  }
+
+  for (const [type, dynCfg] of Object.entries(cfg.dynamicMaxPerType) as [string, typeof cfg.dynamicMaxPerType[string]][]) {
+    if (!dynCfg || !toFill.has(type) || !chosen[type]) continue
+    const sourceEntity =
+      chosen[dynCfg.source_type] ??
+      context.find((e) => e.entity_type === dynCfg.source_type)
+    if (!sourceEntity) continue
+    const slotCapacity = Number(sourceEntity.attributes[dynCfg.source_attribute] ?? 0)
+    const unitCap = dynCfg.capacity_attribute
+      ? Number(chosen[type]!.attributes[dynCfg.capacity_attribute] ?? 1)
+      : 1
+    const maxQty = unitCap > 0 ? Math.floor(slotCapacity / unitCap) : 1
+    if (maxQty <= 1) continue
+    const kitCost = unitCost(chosen[type]!, cfg)
+    const kitLoad = entityLoad(chosen[type]!, cfg)
+    const baseLoadItems = [...context, ...anchorCtx, ...Object.values(chosen)]
+      .filter((e, i, arr) => arr.indexOf(e) === i && e.entity_type !== capacityType)
+    const baseLoad = totalLoadOf(baseLoadItems, cfg)
+    for (let extra = maxQty - 1; extra >= 1; extra--) {
+      const extraCost = extra * kitCost
+      if (extraCost > remaining) continue
+      const newLoad = baseLoad + extra * kitLoad
+      const newCapMin = newLoad / capacityFactor
+      const currentCap = chosen[capacityType]
+      if (currentCap && Number(currentCap.attributes[capAttr] ?? 0) >= newCapMin) {
+        quantities[type] = 1 + extra
+        remaining -= extraCost
+        break
+      }
+      if (toFill.has(capacityType) && currentCap) {
+        const oldCapCost = unitCost(currentCap, cfg)
+        const budgetForNewCap = remaining - extraCost + oldCapCost
+        const newCap = findCheapestCapacity(available, newCapMin, budgetForNewCap, cfg)
+        if (newCap) {
+          remaining -= extraCost + unitCost(newCap, cfg) - oldCapCost
+          chosen[capacityType] = newCap
+          quantities[type] = 1 + extra
+          break
+        }
+      }
+    }
+  }
+
+  for (const { type, preferAttribute, maxAttrValue, minAttrValue, upgradeExisting } of cfg.postFillTypes ?? []) {
+    if (!upgradeExisting) continue
+    if (!toFill.has(type)) continue
+    const existing = postFilled[type]?.[0]?.entity ?? null
+    const existingCost = existing ? unitCost(existing, cfg) : 0
+    const upgradeCandidates = available
+      .filter((e) => {
+        if (e.entity_type !== type || !cachedPairwise(e, allCtxForPost, rules)) return false
+        if (preferAttribute) {
+          const v = Number(e.attributes[preferAttribute] ?? 0)
+          if (maxAttrValue !== undefined && v > maxAttrValue) return false
+          if (minAttrValue !== undefined && v < minAttrValue) return false
+        }
+        return true
+      })
+      .sort((a, b) => {
+        if (preferAttribute) {
+          const diff = Number(a.attributes[preferAttribute] ?? 0) - Number(b.attributes[preferAttribute] ?? 0)
+          if (diff !== 0) return diff
+        }
+        return unitCost(a, cfg) - unitCost(b, cfg)
+      })
+    for (const candidate of upgradeCandidates) {
+      const upgradeCost = unitCost(candidate, cfg) - existingCost
+      if (upgradeCost <= remaining) {
+        postFilled[type] = [{ entity: candidate, quantity: 1 }]
+        remaining -= upgradeCost
+        break
+      }
+    }
+  }
+
+  {
+    const upgradeOrder: string[] = [
+      ...(cfg.selectionOrder ?? []).filter((t) => t !== capacityType),
+      ...[...new Set((cfg.postFillTypes ?? []).filter((pf) => !pf.upgradeExisting).map((pf) => pf.type))],
+      capacityType,
+    ]
+    const slotFor = (type: string): Entity | null =>
+      postFilled[type]?.[0]?.entity ?? chosen[type] ?? null
+
+    let anyUpgraded = true
+    while (anyUpgraded && remaining > 0) {
+      anyUpgraded = false
+      for (const type of upgradeOrder) {
+        if (!toFill.has(type)) continue
+        if ((quantities[type] ?? 1) > 1) continue
+        const current = slotFor(type)
+        if (!current) continue
+        const currentCost = unitCost(current, cfg)
+        const ctxWithout = [
+          ...context, ...anchorCtx,
+          ...Object.entries(chosen).filter(([t]) => t !== type).map(([, e]) => e),
+          ...Object.entries(postFilled).filter(([t]) => t !== type).flatMap(([, s]) => s.map((i) => i.entity)),
+        ]
+        const minCapWatt = type === capacityType ? Number(current.attributes[capAttr] ?? 0) : 0
+        const best = available
+          .filter((e) => {
+            if (e.entity_type !== type || e.id === current.id) return false
+            const cost = unitCost(e, cfg)
+            if (cost <= currentCost || cost - currentCost > remaining) return false
+            if (!cachedPairwise(e, ctxWithout, rules)) return false
+            if (minCapWatt > 0 && Number(e.attributes[capAttr] ?? 0) < minCapWatt) return false
+            return true
+          })
+          .sort((a, b) => unitCost(b, cfg) - unitCost(a, cfg))[0] ?? null
+
+        if (best) {
+          remaining -= unitCost(best, cfg) - currentCost
+          if (postFilled[type]?.length) {
+            postFilled[type] = [{ entity: best, quantity: 1 }]
+          } else {
+            chosen[type] = best
+          }
+          anyUpgraded = true
+        }
+      }
+    }
+  }
+
+  const pkg: Record<string, SlotItem[]> = {}
+  if (toFill.has(anchorType) && anchorEntity) pkg[anchorType] = [{ entity: anchorEntity, quantity: 1 }]
+  for (const [type, entity] of Object.entries(chosen)) {
+    if (!toFill.has(type)) continue
+    pkg[type] = [{ entity, quantity: quantities[type] ?? 1 }]
+  }
+  Object.assign(pkg, postFilled)
+  return pkg
+}
+
+// ── Public class ─────────────────────────────────────────────────────────────
+
+export class BacktrackFillStrategy implements FillStrategy {
+  fill(entities: Entity[], cfg: DomainConfig, input: FillInput): SuggestResult {
+    const { budget, pinned, excluded, blockedIds } = input
+    const rules = cfg.rules
+    const result = emptySlots(cfg)
+
+    let pinnedCost = 0
+    for (const type of cfg.entityTypes) {
+      if (!excluded[type]) {
+        result[type] = (pinned[type] ?? []).map((s) => ({ ...s }))
+        pinnedCost += result[type].reduce((s, i) => s + slotCost(i, cfg), 0)
+      }
+    }
+    const effectiveBudget = budget - pinnedCost
+
+    const available = entities.filter((e) => e.status === 'published' && !blockedIds.has(e.id))
+    const pinnedEntities = Object.values(result).flatMap((arr) => arr.map((s) => s.entity))
+
+    const capacityFactor = cfg.capacityFactor ?? 0.8
+    const anchorType: string = cfg.anchorType ?? cfg.fillOrder[0]!
+
+    const toFill = new Set(cfg.entityTypes.filter((t) => !excluded[t] && (result[t] ?? []).length === 0))
+
+    if (!toFill.has(anchorType)) {
+      const anchorEntity = excluded[anchorType] ? null : (result[anchorType]?.[0]?.entity ?? null)
+      const pkg = tryFillPackage(anchorEntity, pinnedEntities, available, rules, cfg, effectiveBudget, capacityFactor, toFill)
+      if (pkg) Object.assign(result, pkg)
+      return { slots: result, overflow: false }
+    }
+
+    const anchorTarget = Math.round(effectiveBudget * Math.ceil(cfg.entityTypes.length / 2) / cfg.entityTypes.length)
+    const anchorCandidates = available
+      .filter((e) => e.entity_type === anchorType)
+      .sort((a, b) => Math.abs(unitCost(a, cfg) - anchorTarget) - Math.abs(unitCost(b, cfg) - anchorTarget))
+
+    for (const anchor of anchorCandidates) {
+      const pkg = tryFillPackage(anchor, pinnedEntities, available, rules, cfg, effectiveBudget, capacityFactor, toFill)
+      if (pkg) {
+        Object.assign(result, pkg)
+        return { slots: result, overflow: false }
+      }
+    }
+
+    const noAnchorFill = new Set([...toFill].filter((t) => t !== anchorType))
+    const pkg = tryFillPackage(null, pinnedEntities, available, rules, cfg, effectiveBudget, capacityFactor, noAnchorFill)
+    if (pkg) Object.assign(result, pkg)
+
+    return { slots: result, overflow: false }
+  }
+}
+```
+
+---
+
+## Task 5 — สร้าง `strategies/index.ts`
+
+**Files:**
+- Create: `app/engine/strategies/index.ts`
+
+- [ ] **Step 1: สร้าง registry**
+
+```typescript
+// app/engine/strategies/index.ts
+import type { FillStrategy } from './types'
+import { BacktrackFillStrategy } from './backtrack'
+
+const registry: Record<string, FillStrategy> = {
+  backtrack: new BacktrackFillStrategy(),
+}
+
+export function getStrategy(name: string = 'backtrack'): FillStrategy {
+  const s = registry[name]
+  if (!s) throw new Error(
+    `Unknown fill strategy: "${name}". Available: ${Object.keys(registry).join(', ')}`
+  )
+  return s
+}
+
+export function registerStrategy(name: string, strategy: FillStrategy): void {
+  registry[name] = strategy
+}
+
+export type { FillStrategy }
+export type { FillInput } from './types'
+```
+
+---
+
+## Task 6 — Refactor `suggest.ts`
+
+**Files:**
+- Modify: `app/engine/suggest.ts`
+
+นี่คือการเปลี่ยนใหญ่ที่สุด — ลบ fill logic ออก, เพิ่ม re-exports เพื่อ backward compat
+
+- [ ] **Step 1: เขียน `suggest.ts` ใหม่ทั้งไฟล์**
+
+```typescript
+// app/engine/suggest.ts
+//
+// Public API for the suggestion engine.
+// Downstream imports from '~/engine/suggest' still work unchanged — this file
+// re-exports everything that moved to engine-types and engine-helpers.
+//
+import type { Entity, SimulationItem, BomItem } from '~/data/types'
+import { runPairwise } from './pairwise'
+import { runAggregate, getAggregateDetail } from './aggregate'
+import { getStrategy } from './strategies/index'
+
+// ── Re-exports for backward compatibility ─────────────────────────────────────
+export type {
+  TierRule, DynamicMaxCfg, PostFillCfg, FetchLimits,
+  DomainConfig, SlotItem, SuggestInput, SuggestResult,
+} from './engine-types'
+
+export {
+  unitCost, slotCost, toSimItems, maxFor, usedCapacity,
+  uniqueEntities, cachedPairwise,
+} from './engine-helpers'
+
+// ── Re-import types needed locally ───────────────────────────────────────────
+import type { DomainConfig, SlotItem, SuggestInput, SuggestResult } from './engine-types'
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+export function buildSuggestion(
+  entities: Entity[],
+  cfg: DomainConfig,
+  input: SuggestInput,
+): SuggestResult {
+  const pinned = Object.fromEntries(
+    cfg.entityTypes.map((t) => [t, input.pinned?.[t] ?? []]),
+  ) as Record<string, SlotItem[]>
+  const excluded = Object.fromEntries(
+    cfg.entityTypes.map((t) => [t, input.excluded?.[t] ?? false]),
+  ) as Record<string, boolean>
+  const blockedIds = new Set(input.blockedIds ?? [])
+
+  const strategy = getStrategy(cfg.fillStrategy)
+  return strategy.fill(entities, cfg, {
+    budget: input.budget ?? Infinity,
+    pinned,
+    excluded,
+    blockedIds,
+  })
+}
+
+export function validateItems(
+  items: SimulationItem[],
+  cfg: DomainConfig,
+  constraints: Record<string, unknown> = {},
+): import('~/data/types').ValidationIssue[] {
+  const rules = cfg.rules
+  const result: import('~/data/types').ValidationIssue[] = []
+
+  const presentTypes = new Set(items.map((i) => i.entity.entity_type))
+  for (const t of cfg.requiredTypes) {
+    if (!presentTypes.has(t)) {
+      result.push({
+        rule_code:  `MISSING_${t.toUpperCase()}`,
+        check_type: 'aggregate',
+        severity:   'error',
+        message:    `${cfg.entityTypeLabels[t] ?? t} is missing from the configuration`,
+        resolution: `Add at least one ${cfg.entityTypeLabels[t] ?? t}`,
+      })
+    }
+  }
+
+  import { uniqueEntities } from './engine-helpers'  // already re-exported but need locally
+  const activeRules = [...rules].filter((r) => r.is_active).sort((a, b) => b.priority - a.priority)
+  const uniq = uniqueEntities(items.map((i) => i.entity))
+  for (const rule of activeRules) {
+    if (rule.check_type === 'pairwise') result.push(...runPairwise(rule, uniq))
+    else result.push(...runAggregate(rule, items, constraints))
+  }
+  return result
+}
+
+export function aggregateDetailFor(
+  items: SimulationItem[],
+  cfg: DomainConfig,
+): { aggregate_value: number; capacity_value: number; utilization_pct: number } | null {
+  const rules = cfg.rules
+  const primaryRule = rules.find((r) => r.code === cfg.aggregateDisplay.primary && r.is_active)
+  if (primaryRule) {
+    const detail = getAggregateDetail(primaryRule, items, {})
+    if (detail !== null) return detail
+  }
+  if (cfg.aggregateDisplay.safety) {
+    const safetyRule = rules.find((r) => r.code === cfg.aggregateDisplay.safety && r.is_active)
+    if (safetyRule) {
+      const detail = getAggregateDetail(safetyRule, items, {})
+      if (detail !== null) return detail
+    }
+  }
+  return null
+}
+
+export function buildBom(
+  slots: Record<string, SlotItem[]>,
+  cfg: DomainConfig,
+): BomItem[] {
+  let line = 0
+  return cfg.fillOrder.flatMap((t) =>
+    (slots[t] ?? []).map((s) => {
+      line += 10
+      return {
+        line_number: line,
+        entity:      s.entity,
+        quantity:    s.quantity,
+        unit_cost:   unitCost(s.entity, cfg),
+        total_cost:  slotCost(s, cfg),
+      }
+    }),
+  )
+}
+
+export function totalCostOf(slots: Record<string, SlotItem[]>, cfg: DomainConfig): number {
+  return cfg.entityTypes.reduce(
+    (sum, t) => sum + (slots[t] ?? []).reduce((s, i) => s + slotCost(i, cfg), 0), 0,
+  )
+}
+```
+
+> **หมายเหตุ:** `import { uniqueEntities }` ภายใน `validateItems` ต้องย้ายขึ้นไปด้านบนไฟล์พร้อมกับ imports อื่นๆ — แก้ตอน implement
+
+- [ ] **Step 2: แก้ imports ด้านบนไฟล์ให้ถูกต้อง**
+
+```typescript
+// imports ที่ด้านบน suggest.ts ที่ถูกต้อง
+import type { Entity, SimulationItem, BomItem } from '~/data/types'
+import { runPairwise } from './pairwise'
+import { runAggregate, getAggregateDetail } from './aggregate'
+import { getStrategy } from './strategies/index'
+import { uniqueEntities, unitCost, slotCost } from './engine-helpers'
+import type { DomainConfig, SlotItem, SuggestInput, SuggestResult } from './engine-types'
+```
+
+---
+
+## Task 7 — อัปเดต config และรัน regression tests
+
+**Files:**
+- Modify: `app/domains/pc-builder.json`
+
+- [ ] **Step 1: เพิ่ม `fillStrategy` ใน pc-builder.json**
+
+เพิ่มบรรทัดนี้ต่อจาก `"capacityFactor": 0.8`:
+
+```json
+"fillStrategy": "backtrack",
+```
+
+- [ ] **Step 2: รัน regression tests**
+
+```bash
+cd chat-marine && npx tsx --tsconfig test/tsconfig.json test/greedy.ts 2>&1 | tail -20
+```
+
+Expected: ✅ ทุก test ผ่าน เหมือนก่อน refactor
+
+```bash
+cd chat-marine && npx tsx --tsconfig test/tsconfig.json test/suggest-pool.ts 2>&1 | tail -20
+```
+
+Expected: ✅ ทุก test ผ่าน
+
+- [ ] **Step 3: commit**
+
+```bash
+git add app/engine/engine-types.ts app/engine/engine-helpers.ts \
+        app/engine/strategies/types.ts app/engine/strategies/backtrack.ts \
+        app/engine/strategies/index.ts app/engine/suggest.ts \
+        app/domains/pc-builder.json
+git commit -m "refactor: strategy pattern for fill algorithm — BacktrackFillStrategy"
+```
+
+---
+
+## Task 8 — อัปเดต `docs/adding-a-domain.md`
+
+**Files:**
+- Modify: `docs/adding-a-domain.md`
+
+- [ ] **Step 1: เพิ่มหัวข้อ Custom Fill Strategy**
+
+เพิ่มหัวข้อนี้ต่อท้ายไฟล์:
+
+```markdown
+## Custom Fill Strategy (advanced)
+
+ถ้า domain ใหม่มี algorithm ที่ต่างจาก backtrack fill ให้:
+
+1. สร้างไฟล์ `app/engine/strategies/<your-strategy>.ts`:
+
+\```typescript
+import type { FillStrategy, FillInput } from './types'
+import type { Entity } from '~/data/types'
+import type { DomainConfig, SuggestResult } from '../engine-types'
+
+export class MyFillStrategy implements FillStrategy {
+  fill(entities: Entity[], cfg: DomainConfig, input: FillInput): SuggestResult {
+    // implement ที่นี่
+    return { slots: {}, overflow: false }
+  }
+}
+\```
+
+2. Register ใน `app/engine/strategies/index.ts`:
+
+\```typescript
+import { MyFillStrategy } from './my-strategy'
+registry['my-strategy'] = new MyFillStrategy()
+\```
+
+3. ระบุใน domain JSON:
+
+\```json
+"fillStrategy": "my-strategy"
+\```
+
+Backtrack fill รองรับ domain ที่มีโครงสร้าง "เลือก items ในงบที่ compatible กัน" ทั่วไป Custom strategy จำเป็นเมื่อ domain มี algorithm ที่ต่างออกไปจริงๆ เช่น greedy fill หรือ LP-based optimization
+```
+
+- [ ] **Step 2: อัปเดต Checklist ใน adding-a-domain.md**
+
+เพิ่มรายการนี้ใน checklist:
+
+```markdown
+- [ ] `fillStrategy` ระบุใน JSON และมีชื่อตรงกับที่ register ใน registry (default: `"backtrack"`)
+```
+
+---
+
+## Self-Review
+
+**Spec coverage:**
+- [x] FillStrategy interface → Task 3
+- [x] BacktrackFillStrategy (ย้าย algorithm ทั้งหมด) → Task 4
+- [x] Registry + getStrategy → Task 5
+- [x] buildSuggestion dispatch ผ่าน strategy → Task 6
+- [x] Backward compatible exports → Task 6
+- [x] fillStrategy ใน DomainConfig type → Task 1
+- [x] fillStrategy ใน pc-builder.json → Task 7
+- [x] Regression tests → Task 7
+- [x] Docs → Task 8
+
+**Circular import check:**
+- `engine-types` → `data/types` ✓
+- `engine-helpers` → `engine-types`, `pairwise` ✓
+- `strategies/types` → `engine-types` ✓
+- `strategies/backtrack` → `engine-types`, `engine-helpers`, `pairwise` ✓
+- `strategies/index` → `strategies/types`, `strategies/backtrack` ✓
+- `suggest` → `engine-types`, `engine-helpers`, `aggregate`, `pairwise`, `strategies/index` ✓
+- ❌ ไม่มี cycle
+
+**Type consistency:**
+- `FillInput.budget: number` (Infinity-normalized) ≠ `SuggestInput.budget: number | null` — ถูกต้อง, `buildSuggestion` แปลงก่อน pass
+- `BacktrackFillStrategy.fill()` signature ตรงกับ `FillStrategy.fill()` ✓
+- `getStrategy()` return `FillStrategy` ที่ strategy ทุกตัว implement ✓
