@@ -173,7 +173,15 @@ function tryFillPackage(
     .filter((pf) => !pf.upgradeExisting && toFill.has(pf.type))
     .reduce((reserve, pf) => {
       const cheapest = available
-        .filter((e) => e.entity_type === pf.type)
+        .filter((e) => {
+          if (e.entity_type !== pf.type) return false
+          if (pf.preferAttribute !== undefined) {
+            const v = Number(e.attributes[pf.preferAttribute] ?? 0)
+            if (pf.minAttrValue !== undefined && v < pf.minAttrValue) return false
+            if (pf.maxAttrValue !== undefined && v > pf.maxAttrValue) return false
+          }
+          return true
+        })
         .reduce((min, e) => Math.min(min, unitCost(e, cfg)), Infinity)
       return reserve + (isFinite(cheapest) ? cheapest : 0)
     }, 0)
