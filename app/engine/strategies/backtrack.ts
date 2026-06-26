@@ -6,30 +6,15 @@ import { prepareModule, evalModule } from '../ruleflow/index'
 import type { Module, PreparedModule } from '../ruleflow/index'
 import type { FillInput, FillStrategy } from './types'
 
-// ── Budget plan preparation (cached per Module object) ────────────────────────
-
-const DEFAULT_BUDGET_PLAN = prepareModule({
-  name: 'default-budget-plan', ver: '1',
-  inputs: [
-    { name: 'effectiveBudget', type: 'num' },
-    { name: 'entityCount',     type: 'num' },
-  ],
-  outputs: ['anchorTarget'],
-  blocks: [
-    {
-      id: 'anchor', out: ['anchorTarget', 'num'] as ['anchorTarget', 'num'],
-      expr: 'round($effectiveBudget * ceil($entityCount / 2) / $entityCount)',
-    },
-  ],
-})
+// ── Budget plan ───────────────────────────────────────────────────────────────
 
 const _planCache = new WeakMap<Module, PreparedModule>()
 
-function getPreparedPlan(plan: Module | undefined): PreparedModule {
-  if (!plan) return DEFAULT_BUDGET_PLAN
+function computeAnchorTarget(effectiveBudget: number, entityCount: number, plan: Module | undefined): number {
+  if (!plan) return Math.round(effectiveBudget * Math.ceil(entityCount / 2) / entityCount)
   let prepared = _planCache.get(plan)
   if (!prepared) { prepared = prepareModule(plan); _planCache.set(plan, prepared) }
-  return prepared
+  return Number(evalModule(prepared, { effectiveBudget, entityCount })['anchorTarget'] ?? 0)
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -411,9 +396,7 @@ export class BacktrackFillStrategy implements FillStrategy {
       return result
     }
 
-    // Resolve anchorTarget via budgetPlan module (config-driven or default heuristic)
-    const planOut = evalModule(getPreparedPlan(cfg.budgetPlan), { effectiveBudget, entityCount: cfg.entityTypes.length })
-    const anchorTarget = Number(planOut['anchorTarget'] ?? 0)
+    const anchorTarget = computeAnchorTarget(effectiveBudget, cfg.entityTypes.length, cfg.budgetPlan)
 
     const anchorCandidates = available
       .filter((e) => e.entity_type === anchorType)
