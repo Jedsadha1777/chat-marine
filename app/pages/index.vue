@@ -32,11 +32,29 @@ const SLOT_ORDER = FILL_ORDER as EntityType[]
 const expandedSlot = ref<EntityType | null>(null)
 const pickerEntities = ref<Entity[]>([])
 const pickerLoading = ref(false)
+const pickerSearch = ref('')
+const pickerSearchInput = ref<HTMLInputElement | null>(null)
+
+const filteredPickerEntities = computed(() => {
+  const q = pickerSearch.value.trim().toLowerCase()
+  if (!q) return pickerEntities.value
+  return pickerEntities.value.filter(e => {
+    const n = e.name.toLowerCase()
+    let qi = 0
+    for (let i = 0; i < n.length && qi < q.length; i++) if (n[i] === q[qi]) qi++
+    return qi === q.length
+  })
+})
 
 function closePicker() {
   expandedSlot.value = null
   pickerEntities.value = []
+  pickerSearch.value = ''
 }
+
+watch(expandedSlot, async (val) => {
+  if (val) { await nextTick(); pickerSearchInput.value?.focus() }
+})
 
 async function toggleExpand(type: EntityType) {
   if (expandedSlot.value === type) { closePicker(); return }
@@ -297,6 +315,11 @@ const powerPct = computed(() => {
               <button class="lb-close" @click="closePicker()">✕</button>
             </div>
 
+            <div class="lb-search">
+              <input ref="pickerSearchInput" v-model="pickerSearch" type="text"
+                class="lb-search-input" placeholder="Search…" @keydown.esc="closePicker()" />
+            </div>
+
             <div class="lb-body">
               <div class="pick-row"
                 :class="{ 'pick-active': pinned[expandedSlot].length === 0 && !excluded[expandedSlot] }"
@@ -317,7 +340,7 @@ const powerPct = computed(() => {
 
               <div v-if="pickerLoading" class="pick-loading">Loading...</div>
 
-              <div v-for="entity in pickerEntities" :key="entity.id"
+              <div v-for="entity in filteredPickerEntities" :key="entity.id"
                 class="pick-row"
                 :class="{ 'pick-active': pinned[expandedSlot].some((s) => s.entity.id === entity.id) }">
                 <span class="pick-name" @click="selectPin(expandedSlot, entity)">
@@ -429,6 +452,12 @@ html, body {
   color: #888; line-height: 1; padding: 2px 4px; border-radius: 3px;
 }
 .lb-close:hover { background: #f0f0f0; color: #333; }
+.lb-search { padding: 8px 12px; border-bottom: 1px solid #e8e8e8; flex-shrink: 0; }
+.lb-search-input {
+  width: 100%; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px;
+  font-size: 13px; outline: none;
+}
+.lb-search-input:focus { border-color: #555; }
 .lb-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
 .lb-footer {
   padding: 10px 16px; border-top: 1px solid #e8e8e8; display: flex;
