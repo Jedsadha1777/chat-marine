@@ -83,7 +83,6 @@ export function useSimulation() {
       method: 'POST',
       body: {
         type,
-        budget:           budget.value,
         currentEntityIds: [...new Set(currentEntityIds)],
         blockedIds:       [...blockedIds],
       },
