@@ -38,10 +38,10 @@ const pickerSearchInput = ref<HTMLInputElement | null>(null)
 const filteredPickerEntities = computed(() => {
   const q = pickerSearch.value.trim().toLowerCase()
   if (!q) return pickerEntities.value
-  const tokens = q.split(/\s+/)
+  const regs = q.split(/\s+/).map(t => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`))
   return pickerEntities.value.filter(e => {
     const n = e.name.toLowerCase()
-    return tokens.every(t => n.includes(t))
+    return regs.every(r => r.test(n))
   })
 })
 
