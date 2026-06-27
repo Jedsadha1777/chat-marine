@@ -100,6 +100,7 @@ export async function fetchPickerCandidates(
   maxCost: number,
   blockedIds: number[],
   dbCfg: DbConfig = DEFAULT_DB_CONFIG,
+  limit = 500,
 ): Promise<Entity[]> {
   const col = safeSqlId(dbCfg.costColumn)
   let sql = `
@@ -114,7 +115,8 @@ export async function fetchPickerCandidates(
     params.push(...blockedIds)
   }
 
-  sql += ` ORDER BY ${col} ASC`
+  sql += ` ORDER BY ${col} ASC LIMIT ?`
+  params.push(limit)
 
   const { results } = await DB.prepare(sql).bind(...params).all<Record<string, unknown>>()
   return results.map((r) => rowToEntity(r, dbCfg.costColumn))
