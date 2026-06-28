@@ -1,6 +1,9 @@
 import type { Entity, CompatibilityRule, SimulationItem } from '~/data/types'
 import { runPairwise, evalLogic } from '~/engine/pairwise'
-import type { DomainConfig, SlotItem, TierRule } from './engine-types'
+import type { DomainConfig, DynamicMaxCfg, SlotItem, TierRule } from './engine-types'
+import { evalExpr } from './ruleflow/eval'
+import { parseExpr } from './ruleflow/parser'
+import type { AstNode } from './ruleflow/types'
 
 export function unitCost(e: Entity, cfg: DomainConfig): number {
   const raw = e.attributes[cfg.costAttribute] ?? 0
@@ -22,17 +25,48 @@ export function toSimItems(slots: Record<string, SlotItem[]>, cfg: DomainConfig)
   )
 }
 
+const _astCache = new Map<string, AstNode>()
+function getAst(formula: string): AstNode {
+  let ast = _astCache.get(formula)
+  if (!ast) { ast = parseExpr(formula); _astCache.set(formula, ast) }
+  return ast
+}
+
+export function resolveCapacity(
+  dynCfg: DynamicMaxCfg,
+  slots: Record<string, SlotItem[]>,
+  extra: Entity[] = [],
+): number {
+  if ('formula' in dynCfg) {
+    const ctx: Record<string, unknown> = {}
+    for (const [t, items] of Object.entries(slots)) {
+      const e = items[0]?.entity
+      if (e) for (const [k, v] of Object.entries(e.attributes)) ctx[`${t}_${k}`] = v
+    }
+    for (const e of extra) {
+      for (const [k, v] of Object.entries(e.attributes)) ctx[`${e.entity_type}_${k}`] = v
+    }
+    try { return Number(evalExpr(getAst(dynCfg.formula), ctx)) || dynCfg.fallback }
+    catch { return dynCfg.fallback }
+  }
+  const vals = dynCfg.sources
+    .map(src => {
+      const e = slots[src.source_type]?.[0]?.entity ?? extra.find(e => e.entity_type === src.source_type)
+      const v = e?.attributes[src.source_attribute]
+      return v !== undefined && v !== null ? Number(v) : null
+    })
+    .filter((v): v is number => v !== null)
+  if (!vals.length) return dynCfg.fallback
+  if (dynCfg.aggregate === 'min') return Math.min(...vals)
+  if (dynCfg.aggregate === 'max') return Math.max(...vals)
+  return vals.reduce((a, b) => a + b, 0)
+}
+
 export function maxFor(type: string, cfg: DomainConfig, slots?: Record<string, SlotItem[]>): number {
   if (cfg.maxPerType[type] !== undefined) return cfg.maxPerType[type]!
   const dynCfg = cfg.dynamicMaxPerType[type]
-  if (dynCfg && slots) {
-    const sourceItems = slots[dynCfg.source_type] ?? []
-    if (sourceItems.length > 0) {
-      const val = sourceItems[0]?.entity.attributes[dynCfg.source_attribute]
-      if (val !== undefined && val !== null) return Number(val)
-    }
-    return dynCfg.fallback
-  }
+  if (dynCfg && slots) return resolveCapacity(dynCfg, slots)
+  if (dynCfg) return dynCfg.fallback
   return Infinity
 }
 

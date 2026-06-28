@@ -1,7 +1,7 @@
 import type { Entity, CompatibilityRule } from '~/data/types'
 import { evalLogic } from '~/engine/pairwise'
 import type { DomainConfig, DynamicMaxCfg, SlotItem } from '../engine-types'
-import { unitCost, slotCost, emptySlots, cachedPairwise, getTierConditions } from '../engine-helpers'
+import { unitCost, slotCost, emptySlots, cachedPairwise, getTierConditions, resolveCapacity } from '../engine-helpers'
 import { prepareModule, evalModule } from '../ruleflow/index'
 import type { Module, PreparedModule } from '../ruleflow/index'
 import type { FillInput, FillStrategy } from './types'
@@ -219,15 +219,16 @@ function tryFillPackage(
     }
   }
 
+  const chosenAsSlots: Record<string, SlotItem[]> = Object.fromEntries(
+    Object.entries(chosen).map(([t, e]) => [t, [{ entity: e, quantity: 1 }]])
+  )
+
   for (const [type, dynCfg] of Object.entries(cfg.dynamicMaxPerType) as [string, DynamicMaxCfg][]) {
     if (!dynCfg || !toFill.has(type) || !chosen[type]) continue
 
-    const sourceEntity =
-      chosen[dynCfg.source_type] ??
-      context.find((e) => e.entity_type === dynCfg.source_type)
-    if (!sourceEntity) continue
+    const slotCapacity = resolveCapacity(dynCfg, chosenAsSlots, context)
+    if (!slotCapacity) continue
 
-    const slotCapacity = Number(sourceEntity.attributes[dynCfg.source_attribute] ?? 0)
     const unitCap = dynCfg.capacity_attribute
       ? Number(chosen[type]!.attributes[dynCfg.capacity_attribute] ?? 1)
       : 1
