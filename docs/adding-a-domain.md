@@ -85,19 +85,27 @@ Create `app/domains/<your-domain>.json` and add the schema reference for editor 
 
 ### รูปแบบที่ 1 — Multi-source + aggregate
 
-slot count อ่านจาก attribute ของ entity หนึ่งตัวหรือหลายตัว แล้วรวมด้วย `min`/`max`/`sum`:
+slot count อ่านจาก attribute ของ entity หนึ่งตัวหรือหลายตัว แล้วรวมด้วย `min`/`max`/`sum`
+
+**`sources` array — แต่ละ entry คือ one (entity_type, attribute) pair เจตนาเป็น singular:**
+
+| ต้องการอะไร | วิธีใส่ |
+|---|---|
+| อ่านจาก type เดียว | entry เดียว |
+| อ่านจากหลาย type | entry ละหนึ่ง type |
+| อ่านหลาย attribute จาก type เดียวกัน | entry ละหนึ่ง attribute (source_type ซ้ำได้) |
 
 ```json
 "dynamicMaxPerType": {
+
   "ram": {
-    "sources": [
-      { "source_type": "motherboard", "source_attribute": "ram_slots" }
-    ],
+    "sources": [{ "source_type": "motherboard", "source_attribute": "ram_slots" }],
     "aggregate":          "min",
     "capacity_attribute": "modules",
     "sort_attribute":     "capacity_gb",
     "fallback":           2
   },
+
   "gpu": {
     "sources": [
       { "source_type": "motherboard", "source_attribute": "pcie_slots" },
@@ -105,15 +113,27 @@ slot count อ่านจาก attribute ของ entity หนึ่งต�
     ],
     "aggregate": "min",
     "fallback":  1
+  },
+
+  "expansion_card": {
+    "sources": [
+      { "source_type": "motherboard", "source_attribute": "pcie_x16_slots" },
+      { "source_type": "motherboard", "source_attribute": "pcie_x8_slots" }
+    ],
+    "aggregate": "sum",
+    "fallback":  2
   }
+
 }
 ```
 
-- `sources` — รายการ (entity type, attribute) ที่จะอ่านค่า; ตัวไหนยังไม่ถูกเลือกจะถูกข้าม
-- `aggregate` — วิธีรวมค่าจากหลาย source: `min` = constraint แน่นสุด, `max` = หลวมสุด, `sum` = บวกรวม
+- `sources[].source_type` — entity type ที่จะอ่าน (string เดียว ไม่ใช่ array); ถ้าต้องการหลาย type ให้เพิ่ม entry
+- `sources[].source_attribute` — attribute บน entity นั้นที่เก็บค่า numeric
+- entry ที่ยัง ไม่มีของถูกเลือก จะถูกข้าม — aggregate รันเฉพาะค่าที่มี
+- `aggregate` — `min` = constraint แน่นสุด (พบบ่อยสุด), `max` = หลวมสุด, `sum` = บวกรวม
 - `capacity_attribute` — attribute บน entity นี้ที่นับว่าใช้กี่ slot ต่อชิ้น (เช่น dual-channel kit = 2 modules)
 - `sort_attribute` — attribute ที่ใช้เรียงลำดับตอนเลือก (สูงสุดก่อน)
-- `fallback` — ค่า default ก่อนที่ source entity ถูกเลือก
+- `fallback` — ค่าที่ใช้เมื่อยังไม่มี source entity ถูกเลือกเลย
 
 ### รูปแบบที่ 2 — RuleFlow formula
 
