@@ -14,8 +14,8 @@
   "maxPerType":          { "gpu": 1, "cpu": 1, "motherboard": 1, "psu": 1, "ssd": 1 },
   "dynamicMaxPerType": {
     "ram": {
-      "source_type":        "motherboard",
-      "source_attribute":   "ram_slots",
+      "sources":            [{ "source_type": "motherboard", "source_attribute": "ram_slots" }],
+      "aggregate":          "min",
       "capacity_attribute": "modules",
       "sort_attribute":     "capacity_gb",
       "fallback":           2

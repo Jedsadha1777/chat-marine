@@ -7,13 +7,27 @@ export interface TierRule {
   requires: Array<{ entity_type: string; condition: Record<string, unknown> }>
 }
 
-export interface DynamicMaxCfg {
-  source_type:        string
-  source_attribute:   string
+export interface DynMaxSourceEntry {
+  source_type:      string
+  source_attribute: string
+}
+
+export interface DynMaxSources {
+  sources:            DynMaxSourceEntry[]
+  aggregate:          'min' | 'max' | 'sum'
   capacity_attribute?: string
   sort_attribute?:    string
   fallback:           number
 }
+
+export interface DynMaxFormula {
+  formula:            string          // RuleFlow expr; vars = {type}_{attribute} from suggestion
+  capacity_attribute?: string
+  sort_attribute?:    string
+  fallback:           number
+}
+
+export type DynamicMaxCfg = DynMaxSources | DynMaxFormula
 
 export interface PostFillCfg {
   type:              string

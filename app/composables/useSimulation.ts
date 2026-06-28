@@ -1,8 +1,18 @@
 import type { Entity, ValidationIssue, BomItem } from '~/data/types'
 import { DOMAIN, ENTITY_TYPES, COST_ATTRIBUTE, COST_PRECISION, type EntityType } from '~/domains'
-import type { SlotItem } from '~/engine/suggest'
+import type { SlotItem, DynamicMaxCfg } from '~/engine/suggest'
+import { evalExpr } from '~/engine/ruleflow/eval'
+import { parseExpr } from '~/engine/ruleflow/parser'
+import type { AstNode } from '~/engine/ruleflow/types'
 
 export type { SlotItem }
+
+const _astCache = new Map<string, AstNode>()
+function getAst(formula: string): AstNode {
+  let ast = _astCache.get(formula)
+  if (!ast) { ast = parseExpr(formula); _astCache.set(formula, ast) }
+  return ast
+}
 
 function unitCost(e: Entity): number {
   const raw = e.attributes[COST_ATTRIBUTE] ?? 0
@@ -89,24 +99,41 @@ export function useSimulation() {
     })
   }
 
+  function dynFormulaCtx(): Record<string, unknown> {
+    const ctx: Record<string, unknown> = {}
+    for (const [type, items] of Object.entries(suggestion.value)) {
+      const entity = (items as SlotItem[])?.[0]?.entity
+      if (entity) for (const [k, v] of Object.entries(entity.attributes)) ctx[`${type}_${k}`] = v
+    }
+    return ctx
+  }
+
+  function resolveDynCapacity(dynCfg: DynamicMaxCfg): number {
+    if ('formula' in dynCfg) {
+      try { return Number(evalExpr(getAst(dynCfg.formula), dynFormulaCtx())) || dynCfg.fallback }
+      catch { return dynCfg.fallback }
+    }
+    const vals = dynCfg.sources
+      .map(s => suggestion.value[s.source_type]?.[0]?.entity.attributes[s.source_attribute])
+      .filter(v => v !== undefined && v !== null)
+      .map(Number)
+    if (!vals.length) return dynCfg.fallback
+    if (dynCfg.aggregate === 'min') return Math.min(...vals)
+    if (dynCfg.aggregate === 'max') return Math.max(...vals)
+    return vals.reduce((a, b) => a + b, 0)
+  }
+
   function slotLimit(type: EntityType): number {
     const dynCfg = DOMAIN.dynamicMaxPerType[type]
     if (!dynCfg) return DOMAIN.maxPerType[type] ?? 1
-    const srcItems = suggestion.value[dynCfg.source_type]
-    if (srcItems?.length > 0) {
-      const val = srcItems[0]?.entity.attributes[dynCfg.source_attribute]
-      if (val !== undefined && val !== null) return Number(val)
-    }
-    return dynCfg.fallback
+    return resolveDynCapacity(dynCfg)
   }
 
   function canAddToSlot(type: EntityType, entity: Entity): boolean {
     const dynCfg = DOMAIN.dynamicMaxPerType[type]
     if (!dynCfg) return pinned[type].length < slotLimit(type)
 
-    const srcItems = suggestion.value[dynCfg.source_type]
-    if (!srcItems?.length) return false
-    const capacity = Number(srcItems[0]?.entity.attributes[dynCfg.source_attribute] ?? 0)
+    const capacity = resolveDynCapacity(dynCfg)
     if (!capacity) return false
 
     const capAttr = dynCfg.capacity_attribute
