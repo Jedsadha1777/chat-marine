@@ -59,16 +59,24 @@
     "dynamicMaxPerType": {
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/DynamicMaxCfg" },
-      "description": "For entity types whose slot count depends on another entity's attribute (e.g., RAM slots from motherboard). Key = the entity type whose count is dynamic. Use {} if no dynamic types.",
-      "examples": [{
-        "ram": {
-          "source_type": "motherboard",
-          "source_attribute": "ram_slots",
-          "capacity_attribute": "modules",
-          "sort_attribute": "capacity_gb",
-          "fallback": 2
+      "description": "For entity types whose slot count depends on another entity's attribute (e.g., RAM slots from motherboard). Key = the entity type whose count is dynamic. Use {} if no dynamic types. Two shapes: sources+aggregate (multi-source) or formula (RuleFlow expr).",
+      "examples": [
+        {
+          "ram": {
+            "sources": [{ "source_type": "motherboard", "source_attribute": "ram_slots" }],
+            "aggregate": "min",
+            "capacity_attribute": "modules",
+            "sort_attribute": "capacity_gb",
+            "fallback": 2
+          }
+        },
+        {
+          "heatsink": {
+            "formula": "min($case_cpu_cooler_clearance_mm, $motherboard_vrm_height_mm)",
+            "fallback": 1
+          }
         }
-      }]
+      ]
     },
 
     "requiredTypes": {
@@ -191,15 +199,55 @@
   "$defs": {
 
     "DynamicMaxCfg": {
+      "oneOf": [
+        { "$ref": "#/$defs/DynMaxSources" },
+        { "$ref": "#/$defs/DynMaxFormula" }
+      ],
+      "description": "Two shapes — sources+aggregate (multi-source lookup) or formula (RuleFlow expression)."
+    },
+
+    "DynMaxSources": {
       "type": "object",
-      "required": ["source_type", "source_attribute", "fallback"],
+      "required": ["sources", "aggregate", "fallback"],
+      "description": "Compute max quantity from one or more entity attributes, combined with min/max/sum.",
       "properties": {
-        "source_type":        { "type": "string", "description": "Entity type that owns the slot count attribute (e.g., 'motherboard')." },
-        "source_attribute":   { "type": "string", "description": "Attribute on source_type that holds the slot count (e.g., 'ram_slots')." },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["source_type", "source_attribute"],
+            "properties": {
+              "source_type":      { "type": "string", "description": "Entity type that owns the attribute (e.g., 'motherboard')." },
+              "source_attribute": { "type": "string", "description": "Attribute on source_type that holds the count (e.g., 'ram_slots')." }
+            }
+          },
+          "description": "List of (entity type, attribute) pairs to read. All must have a selected item; missing ones are skipped."
+        },
+        "aggregate":          { "type": "string", "enum": ["min", "max", "sum"], "description": "How to combine multiple source values. min = tightest constraint, max = loosest, sum = additive." },
         "capacity_attribute": { "type": "string", "description": "Attribute on the dynamic entity that counts how many slots one unit consumes (e.g., 'modules' for a dual-channel RAM kit)." },
-        "sort_attribute":     { "type": "string", "description": "Attribute used to sort candidates of this type during selection. Highest value preferred." },
-        "fallback":           { "type": "integer", "minimum": 1, "description": "Max quantity to use when source_type has no item selected yet." }
+        "sort_attribute":     { "type": "string", "description": "Attribute used to sort candidates during selection. Highest value preferred." },
+        "fallback":           { "type": "integer", "minimum": 1, "description": "Max quantity to use when no source entity is selected yet." }
       }
+    },
+
+    "DynMaxFormula": {
+      "type": "object",
+      "required": ["formula", "fallback"],
+      "description": "Compute max quantity from a RuleFlow expression. Variables are auto-injected as {type}_{attribute} from all currently suggested entities.",
+      "properties": {
+        "formula": {
+          "type": "string",
+          "description": "RuleFlow expression string. Variables are named {type}_{attribute} (e.g., $case_cpu_cooler_clearance_mm, $motherboard_vrm_height_mm). Built-in functions: min(), max(), floor(), ceil(), round()."
+        },
+        "capacity_attribute": { "type": "string", "description": "Attribute on the dynamic entity that counts how many slots one unit consumes." },
+        "sort_attribute":     { "type": "string", "description": "Attribute used to sort candidates during selection. Highest value preferred." },
+        "fallback":           { "type": "integer", "minimum": 1, "description": "Max quantity to use when formula throws or inputs are missing." }
+      },
+      "examples": [
+        { "formula": "min($case_cpu_cooler_clearance_mm, $motherboard_vrm_height_mm)", "fallback": 1 },
+        { "formula": "min($motherboard_pcie_slots, $psu_max_gpus)", "fallback": 1 }
+      ]
     },
 
     "PostFillCfg": {

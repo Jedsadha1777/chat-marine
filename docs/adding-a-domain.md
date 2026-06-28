@@ -81,24 +81,56 @@ Create `app/domains/<your-domain>.json` and add the schema reference for editor 
 
 ## Step 3 — Dynamic slot counts (optional)
 
-ถ้า entity บางประเภทมีจำนวน slot แบบ dynamic (เช่น RAM ขึ้นอยู่กับ motherboard):
+ถ้า entity บางประเภทมีจำนวน slot แบบ dynamic รองรับสองรูปแบบ:
+
+### รูปแบบที่ 1 — Multi-source + aggregate
+
+slot count อ่านจาก attribute ของ entity หนึ่งตัวหรือหลายตัว แล้วรวมด้วย `min`/`max`/`sum`:
 
 ```json
 "dynamicMaxPerType": {
   "ram": {
-    "source_type":        "motherboard",
-    "source_attribute":   "ram_slots",
+    "sources": [
+      { "source_type": "motherboard", "source_attribute": "ram_slots" }
+    ],
+    "aggregate":          "min",
     "capacity_attribute": "modules",
     "sort_attribute":     "capacity_gb",
     "fallback":           2
+  },
+  "gpu": {
+    "sources": [
+      { "source_type": "motherboard", "source_attribute": "pcie_slots" },
+      { "source_type": "psu",         "source_attribute": "max_gpus" }
+    ],
+    "aggregate": "min",
+    "fallback":  1
   }
 }
 ```
 
-- `source_attribute` — attribute บน `source_type` ที่เก็บจำนวน slot
+- `sources` — รายการ (entity type, attribute) ที่จะอ่านค่า; ตัวไหนยังไม่ถูกเลือกจะถูกข้าม
+- `aggregate` — วิธีรวมค่าจากหลาย source: `min` = constraint แน่นสุด, `max` = หลวมสุด, `sum` = บวกรวม
 - `capacity_attribute` — attribute บน entity นี้ที่นับว่าใช้กี่ slot ต่อชิ้น (เช่น dual-channel kit = 2 modules)
 - `sort_attribute` — attribute ที่ใช้เรียงลำดับตอนเลือก (สูงสุดก่อน)
-- `fallback` — ค่า default ก่อนที่ source_type ถูกเลือก
+- `fallback` — ค่า default ก่อนที่ source entity ถูกเลือก
+
+### รูปแบบที่ 2 — RuleFlow formula
+
+slot count คำนวณจาก expression — ใช้เมื่อ logic ซับซ้อนกว่าการ aggregate ตรงๆ:
+
+```json
+"dynamicMaxPerType": {
+  "heatsink": {
+    "formula":  "min($case_cpu_cooler_clearance_mm, $motherboard_vrm_height_mm)",
+    "fallback": 1
+  }
+}
+```
+
+- `formula` — RuleFlow expression; ตัวแปรชื่อ `{type}_{attribute}` จาก suggestion entity ที่ถูกเลือกอยู่ เช่น `$motherboard_ram_slots`, `$case_cpu_cooler_clearance_mm`
+- Built-in functions: `min()`, `max()`, `floor()`, `ceil()`, `round()`
+- ถ้า formula throw หรือ input ขาด จะใช้ `fallback` แทน
 
 ---
 
