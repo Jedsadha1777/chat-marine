@@ -209,26 +209,45 @@
     "DynMaxSources": {
       "type": "object",
       "required": ["sources", "aggregate", "fallback"],
-      "description": "Compute max quantity from one or more entity attributes, combined with min/max/sum.",
+      "description": "Compute max quantity by reading one attribute per source entry, then combining all values with aggregate. Each entry in sources is intentionally one (entity_type, attribute) pair — add multiple entries to read from different types or different attributes on the same type.",
       "properties": {
         "sources": {
           "type": "array",
           "minItems": 1,
-          "items": {
-            "type": "object",
-            "required": ["source_type", "source_attribute"],
-            "properties": {
-              "source_type":      { "type": "string", "description": "Entity type that owns the attribute (e.g., 'motherboard')." },
-              "source_attribute": { "type": "string", "description": "Attribute on source_type that holds the count (e.g., 'ram_slots')." }
-            }
-          },
-          "description": "List of (entity type, attribute) pairs to read. All must have a selected item; missing ones are skipped."
+          "items": { "$ref": "#/$defs/DynMaxSourceEntry" },
+          "description": "One entry = one (entity_type, attribute) pair. Missing entries (source entity not yet selected) are skipped — aggregate runs on whatever is available.",
+          "examples": [
+            [{ "source_type": "motherboard", "source_attribute": "ram_slots" }],
+            [
+              { "source_type": "motherboard", "source_attribute": "pcie_slots" },
+              { "source_type": "psu",         "source_attribute": "max_gpus" }
+            ],
+            [
+              { "source_type": "motherboard", "source_attribute": "pcie_x16_slots" },
+              { "source_type": "motherboard", "source_attribute": "pcie_x8_slots" }
+            ]
+          ]
         },
-        "aggregate":          { "type": "string", "enum": ["min", "max", "sum"], "description": "How to combine multiple source values. min = tightest constraint, max = loosest, sum = additive." },
+        "aggregate":          { "type": "string", "enum": ["min", "max", "sum"], "description": "How to combine the values read from all source entries. min = use the tightest constraint (most common), max = use the loosest, sum = add them together." },
         "capacity_attribute": { "type": "string", "description": "Attribute on the dynamic entity that counts how many slots one unit consumes (e.g., 'modules' for a dual-channel RAM kit)." },
         "sort_attribute":     { "type": "string", "description": "Attribute used to sort candidates during selection. Highest value preferred." },
         "fallback":           { "type": "integer", "minimum": 1, "description": "Max quantity to use when no source entity is selected yet." }
       }
+    },
+
+    "DynMaxSourceEntry": {
+      "type": "object",
+      "required": ["source_type", "source_attribute"],
+      "description": "One (entity_type, attribute) pair. Intentionally singular — source_type is a single string, not an array. To combine values from multiple types or multiple attributes on the same type, add separate entries to the sources array and let aggregate combine them.",
+      "properties": {
+        "source_type":      { "type": "string", "description": "The entity type to read from. Must be a key in entityTypes. Only the first selected item of this type is used." },
+        "source_attribute": { "type": "string", "description": "The attribute name on that entity whose numeric value is used as the slot count contribution." }
+      },
+      "examples": [
+        { "source_type": "motherboard", "source_attribute": "ram_slots" },
+        { "source_type": "psu",         "source_attribute": "max_gpus" },
+        { "source_type": "motherboard", "source_attribute": "pcie_x16_slots" }
+      ]
     },
 
     "DynMaxFormula": {
