@@ -8,7 +8,7 @@ import type { DomainConfig, SlotItem, SuggestInput, SuggestResult } from './engi
 export type { DomainConfig, SlotItem, SuggestInput, SuggestResult, FetchLimits, TierRule, DynamicMaxCfg, PostFillCfg } from './engine-types'
 export { unitCost, slotCost, emptySlots, toSimItems, uniqueEntities, cachedPairwise }
 
-export function buildSuggestion(entities: Entity[], cfg: DomainConfig, input: SuggestInput): SuggestResult {
+export async function buildSuggestion(entities: Entity[], cfg: DomainConfig, input: SuggestInput): Promise<SuggestResult> {
   const pinned = Object.fromEntries(
     cfg.entityTypes.map((t) => [t, input.pinned?.[t] ?? []]),
   ) as Record<string, SlotItem[]>
@@ -17,7 +17,7 @@ export function buildSuggestion(entities: Entity[], cfg: DomainConfig, input: Su
   ) as Record<string, boolean>
 
   const strategy = getStrategy(cfg.fillStrategy)
-  const slots = strategy.fill({ entities, cfg, budget: input.budget ?? Infinity, pinned, excluded })
+  const slots = await strategy.fill({ entities, cfg, budget: input.budget ?? Infinity, pinned, excluded })
 
   return { slots }
 }

@@ -7,7 +7,8 @@
  */
 
 import { readFileSync } from 'fs'
-import { join } from 'path'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import type { Entity } from '~/data/types'
 import type { DomainConfig } from '~/engine/suggest'
 import { validateItems, toSimItems } from '~/engine/suggest'
@@ -31,7 +32,7 @@ function assert(cond: boolean, label: string, detail = ''): void {
 
 // ── load domain ───────────────────────────────────────────────────────────────
 
-const ROOT = '/Users/jedsadha/Documents/www/chat-marine/chat-marine'
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const CFG = JSON.parse(readFileSync(join(ROOT, 'solver/domains/marine-power.json'), 'utf-8')) as DomainConfig
 const ENTITIES = JSON.parse(readFileSync(join(ROOT, 'solver/domains/marine-power.entities.json'), 'utf-8')) as Entity[]
 
