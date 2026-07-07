@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
 
   const candidates = await fetchForDomain(DB, DOMAIN, { budget, pinnedEntities, excluded })
 
-  const result = buildSuggestion(candidates, DOMAIN, {
+  const result = await buildSuggestion(candidates, DOMAIN, {
     budget,
     pinned:   pinnedEntities,
     excluded: Object.fromEntries(DOMAIN.entityTypes.map((t) => [t, excluded[t] ?? false])),

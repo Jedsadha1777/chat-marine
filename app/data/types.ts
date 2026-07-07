@@ -91,6 +91,7 @@ export interface CompatibilityRule {
   resolution?: string
   is_active: boolean
   priority: number
+  penalty?: number
 }
 
 // ─────────────────────────────────────────────

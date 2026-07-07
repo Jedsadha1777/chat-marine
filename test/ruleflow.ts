@@ -240,7 +240,7 @@ const ifBlockPlan: Module = {
   ],
 }
 const ifCfg = { ...DOMAIN, budgetPlan: ifBlockPlan }
-const ifResult = buildSuggestion(POOL, ifCfg, { budget: 30000 })
+const ifResult = await buildSuggestion(POOL, ifCfg, { budget: 30000 })
 assert((ifResult.slots['gpu'] ?? []).length > 0, 'if-block budgetPlan: engine fills anchor through real path')
 
 const brokenPlan: Module = {
@@ -252,7 +252,7 @@ const brokenPlan: Module = {
 const brokenCfg = { ...DOMAIN, budgetPlan: brokenPlan }
 let brokenOk = false
 try {
-  const r = buildSuggestion(POOL, brokenCfg, { budget: 30000 })
+  const r = await buildSuggestion(POOL, brokenCfg, { budget: 30000 })
   brokenOk = (r.slots['gpu'] ?? []).length > 0
 } catch { brokenOk = false }
 assert(brokenOk, 'malformed budgetPlan: falls back to default target instead of throwing')
@@ -266,7 +266,7 @@ const nanPlan: Module = {
 const nanCfg = { ...DOMAIN, budgetPlan: nanPlan }
 let nanOk = false
 try {
-  const r = buildSuggestion(POOL, nanCfg, { budget: 30000 })
+  const r = await buildSuggestion(POOL, nanCfg, { budget: 30000 })
   nanOk = (r.slots['gpu'] ?? []).length > 0
 } catch { nanOk = false }
 assert(nanOk, 'NaN budgetPlan output: falls back to default target instead of propagating NaN')

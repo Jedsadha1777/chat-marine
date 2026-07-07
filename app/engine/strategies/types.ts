@@ -10,5 +10,5 @@ export interface FillInput {
 }
 
 export interface FillStrategy {
-  fill(input: FillInput): Record<string, SlotItem[]>
+  fill(input: FillInput): Promise<Record<string, SlotItem[]>>
 }

@@ -10,3 +10,13 @@ declare module 'h3' {
     }
   }
 }
+
+declare module 'highs-wasm' {
+  const wasmModule: WebAssembly.Module
+  export default wasmModule
+}
+
+declare module '*.wasm' {
+  const wasmModule: WebAssembly.Module
+  export default wasmModule
+}

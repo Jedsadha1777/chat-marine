@@ -5,6 +5,13 @@ export default defineNuxtConfig({
 
   nitro: {
     preset: 'cloudflare-pages',
+    experimental: {
+      wasm: true,
+    },
+    alias: {
+      // highs' exports map hides the .wasm subpath from the bundler
+      'highs-wasm': new URL('./node_modules/highs/build/highs.wasm', import.meta.url).pathname + '?module',
+    },
   },
 
   routeRules: {

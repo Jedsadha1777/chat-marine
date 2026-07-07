@@ -325,7 +325,7 @@ function tryFillPackage(
 // ── BacktrackFillStrategy ─────────────────────────────────────────────────────
 
 export class BacktrackFillStrategy implements FillStrategy {
-  fill({ entities, cfg, budget, pinned, excluded }: FillInput): Record<string, SlotItem[]> {
+  async fill({ entities, cfg, budget, pinned, excluded }: FillInput): Promise<Record<string, SlotItem[]>> {
     const rules = cfg.rules
     const result = emptySlots(cfg)
 
