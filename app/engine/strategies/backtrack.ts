@@ -10,11 +10,22 @@ import type { FillInput, FillStrategy } from './types'
 
 const _planCache = new WeakMap<Module, PreparedModule>()
 
+function defaultAnchorTarget(effectiveBudget: number, entityCount: number): number {
+  return Math.round(effectiveBudget * Math.ceil(entityCount / 2) / entityCount)
+}
+
 function computeAnchorTarget(effectiveBudget: number, entityCount: number, plan: Module | undefined): number {
-  if (!plan) return Math.round(effectiveBudget * Math.ceil(entityCount / 2) / entityCount)
-  let prepared = _planCache.get(plan)
-  if (!prepared) { prepared = prepareModule(plan); _planCache.set(plan, prepared) }
-  return Number(evalModule(prepared, { effectiveBudget, entityCount })['anchorTarget'] ?? 0)
+  if (!plan) return defaultAnchorTarget(effectiveBudget, entityCount)
+  try {
+    let prepared = _planCache.get(plan)
+    if (!prepared) { prepared = prepareModule(plan); _planCache.set(plan, prepared) }
+    const target = Number(evalModule(prepared, { effectiveBudget, entityCount })['anchorTarget'])
+    if (!Number.isFinite(target)) throw new Error(`anchorTarget is not finite: ${target}`)
+    return target
+  } catch (e) {
+    console.error('[backtrack] budgetPlan failed — using default anchor target:', e instanceof Error ? e.message : e)
+    return defaultAnchorTarget(effectiveBudget, entityCount)
+  }
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

@@ -52,8 +52,8 @@ Create `app/domains/<your-domain>.json` and add the schema reference for editor 
 | Field | ความหมาย |
 |---|---|
 | `anchorType` | entity หลักที่กำหนด tier ของทั้ง build — รับงบประมาณก้อนใหญ่ที่สุด |
-| `fillOrder` | ลำดับ entity ใน BOM output |
-| `selectionOrder` | ลำดับที่ backtrack fill เลือก core entities (ไม่รวม anchorType และ capacityType) |
+| `fillOrder` | ลำดับ entity ใน BOM output — ต้องมีครบทุก type ใน `entityTypes` (type ที่ตกหล่นจะหายจาก BOM) |
+| `selectionOrder` | ลำดับที่ backtrack fill เลือก: core types ก่อน แล้ว**ปิดท้ายด้วย `capacityType` เสมอ** (engine เลือก capacity เป็นตัวสุดท้ายแล้วหยุด — type ที่อยู่หลังจะไม่ถูกเลือก) ห้ามใส่ `anchorType` และ postFill types |
 | `fetchLimits` | จำนวน rows ที่ดึงจาก D1 ต่อ category — เพิ่มเพื่อ accuracy สูงขึ้น (กระทบ billing) |
 | `costColumn` | ชื่อ column ใน DB สำหรับ cost (ใช้ใน SQL ORDER BY / WHERE) |
 | `publishedStatus` | ค่า `status` ของ entity ที่พร้อมใช้งาน |
@@ -186,7 +186,37 @@ slot count คำนวณจาก expression — ใช้เมื่อ logi
 ```
 
 สูตรใน `expr` ใช้ `$varName` อ้าง input และ output ของ block ก่อนหน้า  
-ฟังก์ชันที่ใช้ได้: `round()`, `ceil()`, `floor()`, `min()`, `max()`, `abs()`
+ฟังก์ชันที่ใช้ได้: `round()`, `ceil()`, `floor()`, `min()`, `max()`, `abs()`, `clamp(x, lo, hi)`, `pow(x, y)`, `sqrt(x)`  
+Operators: `+ - * / % **`, เปรียบเทียบ `== != > >= < <=`, ตรรกะ `AND OR NOT` — **ไม่มี ternary/if ใน expression** (ใช้ if-block แทน)
+
+ถ้าต้องการเงื่อนไข (เช่น งบสูง → สัดส่วน anchor สูงขึ้น) ใช้ **if-block** ร่วมกับ formula block:
+
+```json
+"budgetPlan": {
+  "name": "tiered-budget-plan", "ver": "1",
+  "inputs": [
+    { "name": "effectiveBudget", "type": "num" },
+    { "name": "entityCount",     "type": "num" }
+  ],
+  "outputs": ["anchorTarget"],
+  "blocks": [
+    {
+      "id": "tier",
+      "outs": [["ratio", "num", 0.5]],
+      "branches": [
+        ["$effectiveBudget >= 80000", { "ratio": 0.6 }],
+        ["$effectiveBudget >= 40000", { "ratio": 0.55 }]
+      ],
+      "else": { "ratio": 0.5 }
+    },
+    { "id": "anchor", "out": ["anchorTarget", "num"], "expr": "round($effectiveBudget * $ratio)" }
+  ]
+}
+```
+
+if-block ทำงานแบบนี้: ตั้งทุก output เป็น fallback ก่อน (`outs` = `[ชื่อ, type, fallback]`) → ไล่เช็ค `branches` บนลงล่าง **เจอตัวแรกที่จริงแล้วหยุด** → ไม่เจอเลยใช้ `else` — payload เป็น object กำหนดค่า output ได้ทั้ง literal และ expression string (เช่น `"$effectiveBudget / 2"`) หากเขียน budgetPlan ผิด engine จะ fallback ไปสูตร default อัตโนมัติ (ดู error ใน log)
+
+ลำดับ block ไม่ต้องเรียงเอง — engine เรียงตาม dependency ของ `$var` ให้อัตโนมัติ
 
 ---
 
@@ -340,9 +370,11 @@ engine, API handler, และ frontend ใช้ domain ใหม่ทัน�
 - [ ] สร้าง `app/domains/<your-domain>.json` ครบ required fields
 - [ ] `$schema` ชี้ไปที่ `./schema.json`
 - [ ] `anchorType` และ `capacityType` (ถ้ามี) อยู่ใน `entityTypes`
-- [ ] `fillOrder` และ `selectionOrder` ครอบคลุม entity types ทั้งหมด
+- [ ] `fillOrder` ครอบคลุม entity types ทั้งหมด
+- [ ] `selectionOrder` = core types + `capacityType` ปิดท้าย (ไม่มี `anchorType` / postFill types)
+- [ ] แต่ละ type อยู่กลุ่มเดียว: anchor / selectionOrder / postFillTypes — ห้ามซ้ำ
 - [ ] `requiredTypes` ใส่ทุก type ที่ขาดไม่ได้
-- [ ] `aggregateDisplay.primary` ตรงกับ `code` ของ rule ที่มีอยู่
+- [ ] `aggregateDisplay.primary` ตรงกับ `code` ของ rule แบบ aggregate ที่มีอยู่
 - [ ] rule `id` ไม่ซ้ำกันภายใน domain
 - [ ] entity types ใน rule `scope`, `from_types`, `exclude_types` ตรงกับ `entityTypes`
 - [ ] อัปเดต import ใน `app/domains/index.ts`
