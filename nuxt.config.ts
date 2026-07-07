@@ -1,5 +1,3 @@
-import { fileURLToPath } from 'node:url'
-
 export default defineNuxtConfig({
   compatibilityDate: '2026-03-16',
 
@@ -12,7 +10,7 @@ export default defineNuxtConfig({
     },
     alias: {
       // highs' exports map hides the .wasm subpath from the bundler
-      'highs-wasm': fileURLToPath(new URL('./node_modules/highs/build/highs.wasm', import.meta.url)) + '?module',
+      'highs-wasm': new URL('./node_modules/highs/build/highs.wasm', import.meta.url).pathname + '?module',
     },
   },
 
