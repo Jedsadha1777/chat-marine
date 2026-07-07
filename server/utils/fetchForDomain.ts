@@ -16,7 +16,6 @@ interface FetchInput {
   budget: number | null
   pinnedEntities: Record<string, SlotItem[]>
   excluded: Record<string, boolean>
-  blockedIds: number[]
 }
 
 export async function fetchForDomain(
@@ -24,7 +23,7 @@ export async function fetchForDomain(
   cfg: DomainConfig,
   input: FetchInput,
 ): Promise<Entity[]> {
-  const { budget, pinnedEntities, excluded, blockedIds } = input
+  const { budget, pinnedEntities, excluded } = input
   const limits = { ...DEFAULT_FETCH_LIMITS, ...cfg.fetchLimits }
   const dbCfg = dbConfigFrom(cfg)
 
@@ -50,29 +49,45 @@ export async function fetchForDomain(
   )
   const anchorFillable = !(excluded[anchorType] || (pinnedEntities[anchorType]?.length ?? 0) > 0)
 
-  const [mainResults, nearTargetResults, cheapResults] = await Promise.all([
+  // Engine-share band: when the anchor is unfilled it consumes ~anchorTarget of the
+  // budget, so backtrack's real per-slot share is far below perSlot. Fetch that band
+  // too, or mid-range candidates fall in the gap between the top-N and cheap-N windows.
+  const shareSlots = (cfg.selectionOrder ?? cfg.fillOrder.filter((t) => t !== anchorType))
+    .filter((t) => t !== capacityType).length
+  const engineShare = shareSlots > 0
+    ? Math.round(Math.max(0, effectiveMax - anchorTarget) / shareSlots)
+    : perSlot
+
+  const [mainResults, nearTargetResults, cheapResults, shareResults] = await Promise.all([
     Promise.all(
       cfg.entityTypes.map((type) => {
         if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return Promise.resolve([] as Entity[])
-        if (type === anchorType)   return fetchCandidates(DB, type, effectiveMax, blockedIds, limits.anchor,     dbCfg)
-        if (type === capacityType) return fetchCandidates(DB, type, maxCost,      blockedIds, limits.capacity,   dbCfg)
-        return fetchCandidates(DB, type, perSlot, blockedIds, limits.core, dbCfg)
+        if (type === anchorType)   return fetchCandidates(DB, type, effectiveMax, limits.anchor,   dbCfg)
+        if (type === capacityType) return fetchCandidates(DB, type, maxCost,      limits.capacity, dbCfg)
+        return fetchCandidates(DB, type, perSlot, limits.core, dbCfg)
       }),
     ),
     anchorFillable
-      ? fetchCandidates(DB, anchorType, anchorTarget, blockedIds, limits.anchorNear, dbCfg)
+      ? fetchCandidates(DB, anchorType, anchorTarget, limits.anchorNear, dbCfg)
       : Promise.resolve([] as Entity[]),
     Promise.all(
       coreFilledTypes.map((type) =>
-        fetchCheapestCandidates(DB, type, perSlot, blockedIds, limits.coreCheap, dbCfg),
+        fetchCheapestCandidates(DB, type, perSlot, limits.coreCheap, dbCfg),
       ),
     ),
+    anchorFillable
+      ? Promise.all(
+          coreFilledTypes.map((type) =>
+            fetchCandidates(DB, type, engineShare, limits.core, dbCfg),
+          ),
+        )
+      : Promise.resolve([] as Entity[][]),
   ])
 
   const seenIds = new Set<number>()
   return [
     ...Object.values(pinnedEntities).flat().map((s) => s.entity),
-    ...[...mainResults.flat(), ...nearTargetResults, ...cheapResults.flat()].filter((e) => {
+    ...[...mainResults.flat(), ...nearTargetResults, ...cheapResults.flat(), ...shareResults.flat()].filter((e) => {
       if (seenIds.has(e.id)) return false
       seenIds.add(e.id)
       return true

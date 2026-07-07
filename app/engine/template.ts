@@ -156,7 +156,7 @@ class Lexer {
 
   private readWord(): string {
     let buf = ''
-    while (this.pos < this.length && WORD_CHARS.includes(this.input[this.pos])) {
+    while (this.pos < this.length && WORD_CHARS.includes(this.input[this.pos]!)) {
       buf += this.input[this.pos]; this.pos++
     }
     return buf
@@ -166,7 +166,7 @@ class Lexer {
     while (this.pos < this.length && this.input[this.pos] === ' ') this.pos++
   }
 
-  private ch(i: number): string { return i < this.length ? this.input[i] : '' }
+  private ch(i: number): string { return i < this.length ? this.input[i]! : '' }
   private isVarStart(ch: string): boolean { return ch !== '' && VAR_START.includes(ch) }
 }
 
@@ -227,10 +227,10 @@ class Parser {
     return { name, args }
   }
 
-  private cur(): Token  { return this.tokens[this.pos] }
+  private cur(): Token  { return this.tokens[this.pos]! }
   private adv(): void   { this.pos++ }
   private is(t: TT): boolean {
-    return this.pos < this.tokens.length && this.tokens[this.pos].type === t
+    return this.pos < this.tokens.length && this.tokens[this.pos]!.type === t
   }
 }
 
@@ -240,22 +240,12 @@ type FilterFn = (value: unknown, ...args: string[]) => unknown
 
 class FilterRegistry {
   private filters: Record<string, FilterFn> = {}
-  private strict = false
 
   constructor() { this.registerDefaults() }
 
-  setStrict(s: boolean): void { this.strict = s }
-  isStrict(): boolean { return this.strict }
-  has(name: string): boolean { return name in this.filters }
-
-  register(name: string, fn: FilterFn): void { this.filters[name] = fn }
-
   apply(name: string, value: unknown, args: string[]): unknown {
-    if (!this.has(name)) {
-      if (this.strict) throw new Error(`Unknown template filter: '${name}'.`)
-      return value // passthrough
-    }
-    return this.filters[name](value, ...args)
+    const fn = this.filters[name]
+    return fn ? fn(value, ...args) : value // unknown filter → passthrough
   }
 
   private registerDefaults(): void {
@@ -444,16 +434,4 @@ function _compile(template: string): RootNode {
 
 export function render(template: string, data: Record<string, unknown>): string {
   return _evaluator.evaluate(_compile(template), data)
-}
-
-export function registerFilter(name: string, fn: FilterFn): void {
-  _registry.register(name, fn)
-}
-
-export function setStrict(strict: boolean): void {
-  _registry.setStrict(strict)
-}
-
-export function clearCache(): void {
-  _cache.clear()
 }

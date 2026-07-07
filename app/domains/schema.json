@@ -8,7 +8,7 @@
   "required": [
     "entityTypes", "entityTypeLabels",
     "fillOrder", "maxPerType", "dynamicMaxPerType",
-    "aggregateGuardTypes", "aggregateDisplay",
+    "aggregateDisplay",
     "requiredTypes", "costAttribute", "costPrecision", "rules"
   ],
 
@@ -116,11 +116,6 @@
       "examples": [0.8]
     },
 
-    "aggregateGuardTypes": {
-      "type": "array", "items": { "type": "string" },
-      "description": "Entity types that trigger aggregate re-check during backtrack fill. Add any type whose selection affects an aggregate constraint.",
-      "examples": [["psu", "ram"]]
-    },
 
     "aggregateDisplay": {
       "type": "object",

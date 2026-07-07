@@ -12,8 +12,4 @@ export function getStrategy(name?: string): FillStrategy {
   return strategy
 }
 
-export function registerStrategy(name: string, strategy: FillStrategy): void {
-  _registry.set(name, strategy)
-}
-
 export type { FillStrategy, FillInput } from './types'

@@ -34,7 +34,6 @@ export function useSimulation() {
   const excluded = reactive<Record<EntityType, boolean>>(
     Object.fromEntries(ENTITY_TYPES.map((t) => [t, false])) as Record<EntityType, boolean>,
   )
-  const blockedIds = reactive<Set<number>>(new Set())
 
   const requestBody = computed(() => ({
     budget: budget.value,
@@ -45,7 +44,6 @@ export function useSimulation() {
       ]),
     ),
     excluded: Object.fromEntries(ENTITY_TYPES.map((t) => [t, excluded[t]])),
-    blockedIds: [...blockedIds],
   }))
 
   // No client-side engine or cache — server re-runs both on every call.
@@ -73,7 +71,6 @@ export function useSimulation() {
   const bom           = computed((): BomItem[]  => (_apiData.value as { bom?: BomItem[] })?.bom ?? [])
   const totalCost     = computed((): number => (_apiData.value as { totalCost?: number })?.totalCost ?? 0)
   const aggregateDetail = computed(() => (_apiData.value as { aggregateDetail?: unknown })?.aggregateDetail ?? null)
-  const floorOverflow = computed((): boolean => false)
 
   const budgetRemaining = computed(() =>
     budget.value !== null ? budget.value - totalCost.value : null,
@@ -94,7 +91,6 @@ export function useSimulation() {
       body: {
         type,
         currentEntityIds: [...new Set(currentEntityIds)],
-        blockedIds:       [...blockedIds],
       },
     })
   }
@@ -168,22 +164,18 @@ export function useSimulation() {
     if (value) pinned[type] = []
   }
 
-  function blockEntity(entityId: number): void { blockedIds.add(entityId) }
-  function unblockEntity(entityId: number): void { blockedIds.delete(entityId) }
-
   function clearAll(): void {
     budget.value = null
     ENTITY_TYPES.forEach((t) => { pinned[t] = []; excluded[t] = false })
-    blockedIds.clear()
   }
 
   return {
-    budget, pinned, slotCost, excluded, blockedIds, floorOverflow,
+    budget, pinned, slotCost, excluded,
     suggestion, totalCost, budgetRemaining, budgetUsedPct,
     issues, aggregateDetail, isValid, bom,
     slotLimit, canAddToSlot,
     pin, pinItems, setPinnedQuantity,
-    exclude, blockEntity, unblockEntity, clearAll,
+    exclude, clearAll,
     compatibleEntitiesFor,
   }
 }

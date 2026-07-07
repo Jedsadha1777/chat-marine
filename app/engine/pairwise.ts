@@ -7,7 +7,7 @@ export function evalLogic(logic: unknown, data: Record<string, unknown>): boolea
   const entries = Object.entries(logic as Record<string, unknown>)
   if (entries.length === 0) return false
 
-  const [op, operands] = entries[0]
+  const [op, operands] = entries[0]!
   const args = Array.isArray(operands) ? operands : [operands]
 
   const resolve = (val: unknown): unknown => {

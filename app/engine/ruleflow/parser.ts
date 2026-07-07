@@ -1,6 +1,3 @@
-// Copied from RuleFlow2 — removed: parseCellPattern, CellPattern import, table-related exports.
-// Changed: .js extensions removed (bundler resolution), TokenizeError kept local.
-
 import { ConfigError } from './errors'
 import { isAlpha, isAlphaNum, isDigit, isWhitespace } from './util'
 import type {

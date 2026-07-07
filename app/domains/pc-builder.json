@@ -25,7 +25,6 @@
     { "type": "ssd", "preferAttribute": "capacity_gb", "minAttrValue": 240, "maxAttrValue": 512 },
     { "type": "ssd", "preferAttribute": "capacity_gb", "minAttrValue": 1000, "upgradeExisting": true }
   ],
-  "aggregateGuardTypes": ["psu", "ram"],
   "aggregateDisplay":    { "primary": "AGG_POWER_CAPACITY", "safety": "AGG_POWER_SAFETY" },
   "requiredTypes":       ["cpu", "motherboard", "ram", "psu"],
   "costAttribute":       "unit_cost",

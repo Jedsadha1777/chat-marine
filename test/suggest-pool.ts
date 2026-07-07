@@ -95,11 +95,26 @@ function selectCandidates(
     ? Math.round(effectiveMax / coreFilledTypes.length)
     : effectiveMax
 
+  // Mirrors fetchForDomain: engine-share band for the unfilled-anchor case
+  const anchorFillable = !(excluded[anchorType] || (pinnedEntities[anchorType]?.length ?? 0) > 0)
+  const anchorTarget = Math.round(
+    effectiveMax * Math.ceil(CFG.entityTypes.length / 2) / CFG.entityTypes.length,
+  )
+  const shareSlots = (CFG.selectionOrder ?? CFG.fillOrder.filter(t => t !== anchorType))
+    .filter(t => t !== capacityType).length
+  const engineShare = shareSlots > 0
+    ? Math.round(Math.max(0, effectiveMax - anchorTarget) / shareSlots)
+    : perSlot
+
   const mainPool: Entity[] = ENTITY_TYPES.flatMap(type => {
     if (excluded[type] || (pinnedEntities[type]?.length ?? 0) > 0) return []
     if (type === anchorType)   return topN(type, effectiveMax, 60)
     if (type === capacityType) return topN(type, maxCost, 50)
-    return [...topN(type, perSlot, 25), ...bottomN(type, perSlot, 25)]
+    return [
+      ...topN(type, perSlot, 25),
+      ...bottomN(type, perSlot, 25),
+      ...(anchorFillable ? topN(type, engineShare, 25) : []),
+    ]
   })
 
   const seenIds = new Set<number>()

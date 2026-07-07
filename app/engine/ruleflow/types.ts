@@ -1,6 +1,3 @@
-// Stripped from RuleFlow2 — num/str/bool types only, formula+if blocks only.
-// Removed: dec, date, time, datetime, SwitchBlock, TableBlock, Prepared* variants for those.
-
 export type PrimType = 'num' | 'str' | 'bool'
 
 export interface Module {
@@ -41,7 +38,7 @@ export type SetMap       = Record<string, number | string | boolean | null>
 export type Inputs       = Record<string, unknown>
 export type Outputs      = Record<string, unknown>
 
-// ── AST (same as RuleFlow2) ───────────────────────────────────────────────────
+// ── AST ───────────────────────────────────────────────────────────────────────
 
 export interface Loc { start: number; end: number }
 

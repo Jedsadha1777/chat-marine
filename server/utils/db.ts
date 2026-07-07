@@ -41,25 +41,17 @@ export async function fetchCandidates(
   DB: D1Database,
   type: string,
   maxCost: number,
-  blockedIds: number[],
   limit = 15,
   dbCfg: DbConfig = DEFAULT_DB_CONFIG,
 ): Promise<Entity[]> {
   const col = safeSqlId(dbCfg.costColumn)
-  let sql = `
+  const sql = `
     SELECT id, uuid, entity_type, code, name, status, ${col}, attributes
     FROM entities
     WHERE entity_type = ? AND status = ? AND ${col} <= ?
+    ORDER BY ${col} DESC LIMIT ?
   `
-  const params: unknown[] = [type, dbCfg.publishedStatus, maxCost]
-
-  if (blockedIds.length > 0) {
-    sql += ` AND id NOT IN (${blockedIds.map(() => '?').join(',')})`
-    params.push(...blockedIds)
-  }
-
-  sql += ` ORDER BY ${col} DESC LIMIT ?`
-  params.push(limit)
+  const params: unknown[] = [type, dbCfg.publishedStatus, maxCost, limit]
 
   const { results } = await DB.prepare(sql).bind(...params).all<Record<string, unknown>>()
   return results.map((r) => rowToEntity(r, dbCfg.costColumn))
@@ -69,54 +61,37 @@ export async function fetchCheapestCandidates(
   DB: D1Database,
   type: string,
   maxCost: number,
-  blockedIds: number[],
   limit = 10,
   dbCfg: DbConfig = DEFAULT_DB_CONFIG,
 ): Promise<Entity[]> {
   const col = safeSqlId(dbCfg.costColumn)
-  let sql = `
+  const sql = `
     SELECT id, uuid, entity_type, code, name, status, ${col}, attributes
     FROM entities
     WHERE entity_type = ? AND status = ? AND ${col} <= ?
+    ORDER BY ${col} ASC LIMIT ?
   `
-  const params: unknown[] = [type, dbCfg.publishedStatus, maxCost]
-
-  if (blockedIds.length > 0) {
-    sql += ` AND id NOT IN (${blockedIds.map(() => '?').join(',')})`
-    params.push(...blockedIds)
-  }
-
-  sql += ` ORDER BY ${col} ASC LIMIT ?`
-  params.push(limit)
+  const params: unknown[] = [type, dbCfg.publishedStatus, maxCost, limit]
 
   const { results } = await DB.prepare(sql).bind(...params).all<Record<string, unknown>>()
   return results.map((r) => rowToEntity(r, dbCfg.costColumn))
 }
 
-// No LIMIT — pairwise filtering must never silently drop compatible options beyond position N.
 export async function fetchPickerCandidates(
   DB: D1Database,
   type: string,
   maxCost: number,
-  blockedIds: number[],
   dbCfg: DbConfig = DEFAULT_DB_CONFIG,
   limit = 500,
 ): Promise<Entity[]> {
   const col = safeSqlId(dbCfg.costColumn)
-  let sql = `
+  const sql = `
     SELECT id, uuid, entity_type, code, name, status, ${col}, attributes
     FROM entities
     WHERE entity_type = ? AND status = ? AND ${col} <= ?
+    ORDER BY ${col} ASC LIMIT ?
   `
-  const params: unknown[] = [type, dbCfg.publishedStatus, maxCost]
-
-  if (blockedIds.length > 0) {
-    sql += ` AND id NOT IN (${blockedIds.map(() => '?').join(',')})`
-    params.push(...blockedIds)
-  }
-
-  sql += ` ORDER BY ${col} ASC LIMIT ?`
-  params.push(limit)
+  const params: unknown[] = [type, dbCfg.publishedStatus, maxCost, limit]
 
   const { results } = await DB.prepare(sql).bind(...params).all<Record<string, unknown>>()
   return results.map((r) => rowToEntity(r, dbCfg.costColumn))

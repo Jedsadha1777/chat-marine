@@ -1,6 +1,5 @@
 import { createError } from 'h3'
 
-const MAX_BLOCKED_IDS  = 500
 const MAX_LOOKUP_IDS   = 50
 const MAX_PINNED_ITEMS = 10
 const MAX_QUANTITY     = 8
@@ -31,10 +30,6 @@ export function parseIds(raw: unknown, maxLen: number): number[] {
     }
     return n
   })
-}
-
-export function parseBlockedIds(raw: unknown): number[] {
-  return parseIds(raw, MAX_BLOCKED_IDS)
 }
 
 export function parseLookupIds(raw: unknown): number[] {

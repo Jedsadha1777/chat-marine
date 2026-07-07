@@ -34,7 +34,6 @@ Create `app/domains/<your-domain>.json` and add the schema reference for editor 
   "publishedStatus": "published",
   "costPrecision":   0,
 
-  "aggregateGuardTypes": [],
   "aggregateDisplay":    { "primary": "AGG_MAIN", "safety": null },
 
   "fillStrategy": "backtrack",
@@ -69,9 +68,7 @@ Create `app/domains/<your-domain>.json` and add the schema reference for editor 
 "capacityType":      "psu",
 "capacityAttribute": "watt_output",
 "loadAttributes":    ["power_draw_w", "tdp_w"],
-"capacityFactor":    0.8,
-
-"aggregateGuardTypes": ["psu"]
+"capacityFactor":    0.8
 ```
 
 - `loadAttributes` — อ่านค่าแรกที่ไม่ null ต่อ entity (fallback chain)

@@ -1,7 +1,7 @@
 import type { Entity, CompatibilityRule } from '~/data/types'
 import { evalLogic } from '~/engine/pairwise'
-import type { DomainConfig, DynamicMaxCfg, SlotItem } from '../engine-types'
-import { unitCost, slotCost, emptySlots, cachedPairwise, getTierConditions, resolveCapacity } from '../engine-helpers'
+import type { DomainConfig, SlotItem } from '../engine-types'
+import { unitCost, slotCost, emptySlots, cachedPairwise, getTierConditions } from '../engine-helpers'
 import { prepareModule, evalModule } from '../ruleflow/index'
 import type { Module, PreparedModule } from '../ruleflow/index'
 import type { FillInput, FillStrategy } from './types'
@@ -178,13 +178,10 @@ function tryFillPackage(
 
   if (chosen === null) return null
 
-  const quantities: Record<string, number> = {}
   const spentInBacktrack = Object.entries(chosen)
     .filter(([t]) => toFill.has(t))
     .reduce((sum, [, e]) => sum + unitCost(e, cfg), 0)
   let remaining = budgetAfterAnchor - spentInBacktrack
-
-  const capAttr = cfg.capacityAttribute ?? 'watt_output'
 
   const postFilled: Record<string, SlotItem[]> = {}
   const allCtxForPost = [...context, ...anchorCtx, ...Object.values(chosen)]
@@ -215,57 +212,6 @@ function tryFillPackage(
         postFilled[type] = [{ entity: candidate, quantity: 1 }]
         remaining -= unitCost(candidate, cfg)
         break
-      }
-    }
-  }
-
-  const chosenAsSlots: Record<string, SlotItem[]> = Object.fromEntries(
-    Object.entries(chosen).map(([t, e]) => [t, [{ entity: e, quantity: 1 }]])
-  )
-
-  for (const [type, dynCfg] of Object.entries(cfg.dynamicMaxPerType) as [string, DynamicMaxCfg][]) {
-    if (!dynCfg || !toFill.has(type) || !chosen[type]) continue
-
-    const slotCapacity = resolveCapacity(dynCfg, chosenAsSlots, context)
-    if (!slotCapacity) continue
-
-    const unitCap = dynCfg.capacity_attribute
-      ? Number(chosen[type]!.attributes[dynCfg.capacity_attribute] ?? 1)
-      : 1
-    const maxQty = unitCap > 0 ? Math.floor(slotCapacity / unitCap) : 1
-    if (maxQty <= 1) continue
-
-    const kitCost = unitCost(chosen[type]!, cfg)
-    const kitLoad = entityLoad(chosen[type]!, cfg)
-
-    const baseLoadItems = [...context, ...anchorCtx, ...Object.values(chosen)]
-      .filter((e, i, arr) => arr.indexOf(e) === i && e.entity_type !== capacityType)
-    const baseLoad = totalLoadOf(baseLoadItems, cfg)
-
-    for (let extra = maxQty - 1; extra >= 1; extra--) {
-      const extraCost = extra * kitCost
-      if (extraCost > remaining) continue
-
-      const newLoad = baseLoad + extra * kitLoad
-      const newCapMin = newLoad / capacityFactor
-
-      const currentCap = chosen[capacityType]
-      if (currentCap && Number(currentCap.attributes[capAttr] ?? 0) >= newCapMin) {
-        quantities[type] = 1 + extra
-        remaining -= extraCost
-        break
-      }
-
-      if (toFill.has(capacityType) && currentCap) {
-        const oldCapCost = unitCost(currentCap, cfg)
-        const budgetForNewCap = remaining - extraCost + oldCapCost
-        const newCap = findCheapestCapacity(available, newCapMin, budgetForNewCap, cfg)
-        if (newCap) {
-          remaining -= extraCost + unitCost(newCap, cfg) - oldCapCost
-          chosen[capacityType] = newCap
-          quantities[type] = 1 + extra
-          break
-        }
       }
     }
   }
@@ -305,7 +251,7 @@ function tryFillPackage(
   // Budget redistribution — cycle every slot until no upgrade fits
   {
     const upgradeOrder: string[] = [
-      ...(cfg.selectionOrder ?? []).filter((t) => t !== capacityType),
+      ...selectionOrder.filter((t) => t !== capacityType),
       ...[...new Set((cfg.postFillTypes ?? []).filter((pf) => !pf.upgradeExisting).map((pf) => pf.type))],
       capacityType,
     ]
@@ -317,7 +263,6 @@ function tryFillPackage(
       anyUpgraded = false
       for (const type of upgradeOrder) {
         if (!toFill.has(type)) continue
-        if ((quantities[type] ?? 1) > 1) continue
         const current = slotFor(type)
         if (!current) continue
         const currentCost = unitCost(current, cfg)
@@ -359,7 +304,7 @@ function tryFillPackage(
   if (toFill.has(anchorType) && anchorEntity) pkg[anchorType] = [{ entity: anchorEntity, quantity: 1 }]
   for (const [type, entity] of Object.entries(chosen)) {
     if (!toFill.has(type)) continue
-    pkg[type] = [{ entity, quantity: quantities[type] ?? 1 }]
+    pkg[type] = [{ entity, quantity: 1 }]
   }
   Object.assign(pkg, postFilled)
 
@@ -369,7 +314,7 @@ function tryFillPackage(
 // ── BacktrackFillStrategy ─────────────────────────────────────────────────────
 
 export class BacktrackFillStrategy implements FillStrategy {
-  fill({ entities, cfg, budget, pinned, excluded, blockedIds }: FillInput): Record<string, SlotItem[]> {
+  fill({ entities, cfg, budget, pinned, excluded }: FillInput): Record<string, SlotItem[]> {
     const rules = cfg.rules
     const result = emptySlots(cfg)
 
@@ -382,7 +327,7 @@ export class BacktrackFillStrategy implements FillStrategy {
     }
     const effectiveBudget = budget - pinnedCost
 
-    const available = entities.filter((e) => e.status === (cfg.publishedStatus ?? 'published') && !blockedIds.has(e.id))
+    const available = entities.filter((e) => e.status === (cfg.publishedStatus ?? 'published'))
     const pinnedEntities = Object.values(result).flatMap((arr) => arr.map((s) => s.entity))
 
     const capacityFactor = cfg.capacityFactor ?? 0.8

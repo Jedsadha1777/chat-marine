@@ -25,7 +25,6 @@ const {
   compatibleEntitiesFor,
   slotLimit,
   canAddToSlot,
-  floorOverflow,
 } = useSimulation()
 
 const SLOT_ORDER = FILL_ORDER as EntityType[]
@@ -159,10 +158,6 @@ const powerPct = computed(() => {
           class="btn-sm" :class="{ 'btn-active': budget === p }"
           @click="setPreset(p)">{{ (p/1000).toFixed(0) }}K</button>
       </div>
-    </div>
-
-    <div v-if="floorOverflow" class="warning-banner">
-      Budget is below the minimum threshold — some components may not be selected
     </div>
 
     <div class="body">
@@ -521,14 +516,6 @@ html, body {
 .bom-qty { color: #666; padding-left: 8px; }
 .bom-p { text-align: right; white-space: nowrap; }
 .bom-sum td { border-bottom: none; font-weight: 600; padding-top: 8px; }
-
-.warning-banner {
-  background: #fff8e0;
-  border-bottom: 1px solid #e8a020;
-  padding: 8px 20px;
-  font-size: 13px;
-  color: #7a5200;
-}
 
 @media (max-width: 720px) {
   .body { grid-template-columns: 1fr; }

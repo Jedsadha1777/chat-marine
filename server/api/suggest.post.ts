@@ -3,7 +3,7 @@ import type { SlotItem } from '~/engine/suggest'
 import { DOMAIN } from '~/domains'
 import { fetchForDomain, fetchByIds } from '../utils/fetchForDomain'
 import { dbConfigFrom } from '../utils/db'
-import { parseBudget, parseBlockedIds, parsePinned } from '../utils/validate'
+import { parseBudget, parsePinned } from '../utils/validate'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<Record<string, unknown>>(event)
@@ -13,7 +13,6 @@ export default defineEventHandler(async (event) => {
   const excluded   = (body.excluded && typeof body.excluded === 'object' && !Array.isArray(body.excluded))
     ? body.excluded as Record<string, boolean>
     : {}
-  const blockedIds = parseBlockedIds(body.blockedIds)
 
   const DB = event.context.cloudflare?.env?.DB
   if (!DB) throw createError({ statusCode: 503, message: 'D1 database not available' })
@@ -31,13 +30,12 @@ export default defineEventHandler(async (event) => {
     ]),
   )
 
-  const candidates = await fetchForDomain(DB, DOMAIN, { budget, pinnedEntities, excluded, blockedIds })
+  const candidates = await fetchForDomain(DB, DOMAIN, { budget, pinnedEntities, excluded })
 
   const result = buildSuggestion(candidates, DOMAIN, {
     budget,
-    pinned:     pinnedEntities,
-    excluded:   Object.fromEntries(DOMAIN.entityTypes.map((t) => [t, excluded[t] ?? false])),
-    blockedIds: new Set(blockedIds),
+    pinned:   pinnedEntities,
+    excluded: Object.fromEntries(DOMAIN.entityTypes.map((t) => [t, excluded[t] ?? false])),
   })
 
   const simItems  = toSimItems(result.slots, DOMAIN)

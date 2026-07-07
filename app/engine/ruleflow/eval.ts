@@ -1,6 +1,3 @@
-// Stripped evaluator — num/str/bool only, no Decimal, formula+if blocks only.
-// Adapted from RuleFlow2 evaluator.ts.
-
 import type {
   AstNode, Block, FormulaBlock, IfBlock,
   Inputs, Module, Outputs, Payload,

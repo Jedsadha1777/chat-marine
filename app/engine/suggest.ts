@@ -2,11 +2,11 @@ import type { Entity, SimulationItem, ValidationIssue, BomItem } from '~/data/ty
 import { runPairwise } from '~/engine/pairwise'
 import { runAggregate, getAggregateDetail } from '~/engine/aggregate'
 import { getStrategy } from './strategies/index'
-import { unitCost, slotCost, emptySlots, toSimItems, maxFor, usedCapacity, uniqueEntities, cachedPairwise } from './engine-helpers'
+import { unitCost, slotCost, emptySlots, toSimItems, uniqueEntities, cachedPairwise } from './engine-helpers'
 import type { DomainConfig, SlotItem, SuggestInput, SuggestResult } from './engine-types'
 
 export type { DomainConfig, SlotItem, SuggestInput, SuggestResult, FetchLimits, TierRule, DynamicMaxCfg, PostFillCfg } from './engine-types'
-export { unitCost, slotCost, emptySlots, toSimItems, maxFor, usedCapacity, uniqueEntities, cachedPairwise }
+export { unitCost, slotCost, emptySlots, toSimItems, uniqueEntities, cachedPairwise }
 
 export function buildSuggestion(entities: Entity[], cfg: DomainConfig, input: SuggestInput): SuggestResult {
   const pinned = Object.fromEntries(
@@ -15,12 +15,11 @@ export function buildSuggestion(entities: Entity[], cfg: DomainConfig, input: Su
   const excluded = Object.fromEntries(
     cfg.entityTypes.map((t) => [t, input.excluded?.[t] ?? false]),
   ) as Record<string, boolean>
-  const blockedIds = new Set(input.blockedIds ?? [])
 
   const strategy = getStrategy(cfg.fillStrategy)
-  const slots = strategy.fill({ entities, cfg, budget: input.budget ?? Infinity, pinned, excluded, blockedIds })
+  const slots = strategy.fill({ entities, cfg, budget: input.budget ?? Infinity, pinned, excluded })
 
-  return { slots, overflow: false }
+  return { slots }
 }
 
 export function validateItems(

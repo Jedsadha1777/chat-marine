@@ -51,7 +51,6 @@ export interface DomainConfig {
   entityTypeLabels:    Record<string, string>
   maxPerType:          Partial<Record<string, number>>
   dynamicMaxPerType:   Partial<Record<string, DynamicMaxCfg>>
-  aggregateGuardTypes: string[]
   aggregateDisplay:    { primary: string; safety: string | null }
   requiredTypes:       string[]
   costAttribute:       string
@@ -78,13 +77,11 @@ export interface SlotItem {
 }
 
 export interface SuggestInput {
-  budget:     number | null
-  pinned?:    Partial<Record<string, SlotItem[]>>
-  excluded?:  Partial<Record<string, boolean>>
-  blockedIds?: Iterable<number>
+  budget:    number | null
+  pinned?:   Partial<Record<string, SlotItem[]>>
+  excluded?: Partial<Record<string, boolean>>
 }
 
 export interface SuggestResult {
-  slots:    Record<string, SlotItem[]>
-  overflow: boolean
+  slots: Record<string, SlotItem[]>
 }
