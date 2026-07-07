@@ -19,8 +19,9 @@ MILP solver ทดลองสำหรับ domain ที่ greedy engine ท
 ## รัน
 
 ```bash
-npx tsx --tsconfig test/tsconfig.json test/cpsat.ts   # เฉพาะ lab
 npm test                                              # ทุก suite (ruleflow, greedy, suggest-pool, cpsat)
+npx tsx --tsconfig test/tsconfig.json test/cpsat.ts   # เฉพาะ lab
+npm run play:solver                                   # playground → http://127.0.0.1:5177
 ```
 
 ## Encoding

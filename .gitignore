@@ -23,6 +23,10 @@ logs
 .env.*
 !.env.example
 
-# Wrangler local state
+# Wrangler local state + secrets
 .wrangler
+.dev.vars
 apply_remote.py
+
+# Claude worktrees
+.claude/worktrees/
