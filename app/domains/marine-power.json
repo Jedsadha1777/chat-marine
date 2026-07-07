@@ -1,5 +1,5 @@
 {
-  "$schema": "../../app/domains/schema.json",
+  "$schema": "./schema.json",
   "entityTypes": [
     "battery",
     "solar_panel",
@@ -292,5 +292,6 @@
   ],
   "objective": {
     "mode": "min_cost"
-  }
+  },
+  "fillStrategy": "cpsat"
 }

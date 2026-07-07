@@ -97,6 +97,23 @@ export async function fetchPickerCandidates(
   return results.map((r) => rowToEntity(r, dbCfg.costColumn))
 }
 
+export async function fetchAllCandidates(
+  DB: D1Database,
+  type: string,
+  dbCfg: DbConfig = DEFAULT_DB_CONFIG,
+  limit = 1000,
+): Promise<Entity[]> {
+  const col = safeSqlId(dbCfg.costColumn)
+  const sql = `
+    SELECT id, uuid, entity_type, code, name, status, ${col}, attributes
+    FROM entities
+    WHERE entity_type = ? AND status = ?
+    ORDER BY ${col} ASC LIMIT ?
+  `
+  const { results } = await DB.prepare(sql).bind(type, dbCfg.publishedStatus, limit).all<Record<string, unknown>>()
+  return results.map((r) => rowToEntity(r, dbCfg.costColumn))
+}
+
 export async function fetchByIds(
   DB: D1Database,
   ids: number[],

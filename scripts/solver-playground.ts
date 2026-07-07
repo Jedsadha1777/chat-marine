@@ -11,25 +11,26 @@ import { fileURLToPath } from 'node:url'
 import type { Entity } from '~/data/types'
 import type { DomainConfig } from '~/engine/suggest'
 import { validateItems, toSimItems } from '~/engine/suggest'
-import { cpsatFill } from '../cpsat-strategy'
-import type { Objective } from '../model-compiler'
+import { cpsatSolve } from '~/engine/strategies/cpsat/index'
+import { explainInfeasible } from '~/engine/strategies/cpsat/explain'
+import type { SolverObjective } from '~/engine/engine-types'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const CFG = JSON.parse(readFileSync(join(__dirname, '../domains/marine-power.json'), 'utf-8')) as DomainConfig
-const ENTITIES = JSON.parse(readFileSync(join(__dirname, '../domains/marine-power.entities.json'), 'utf-8')) as Entity[]
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const CFG = JSON.parse(readFileSync(join(ROOT, 'app/domains/marine-power.json'), 'utf-8')) as DomainConfig
+const ENTITIES = JSON.parse(readFileSync(join(ROOT, 'test/fixtures/marine-power.entities.json'), 'utf-8')) as Entity[]
 
 const sumAttr = (slots: Record<string, { entity: Entity; quantity: number }[]>, type: string, attr: string): number =>
   (slots[type] ?? []).reduce((s, i) => s + Number(i.entity.attributes[attr] ?? 0) * i.quantity, 0)
 
-async function solve(budget: number | null, objective: Objective) {
+async function solve(budget: number | null, objective: SolverObjective) {
   const t0 = performance.now()
-  const r = await cpsatFill(CFG, ENTITIES, budget, objective)
+  const r = await cpsatSolve({ cfg: CFG, entities: ENTITIES, budget, objective })
   const ms = Math.round(performance.now() - t0)
 
   if (r.status !== 'optimal') {
-    // give the user the actual feasibility floor
-    const floor = await cpsatFill(CFG, ENTITIES, null, { mode: 'min_cost' })
-    return { status: r.status, ms, minFeasibleCost: floor.status === 'optimal' ? floor.totalCost : null }
+    const floor = await cpsatSolve({ cfg: CFG, entities: ENTITIES, budget: null, objective: { mode: 'min_cost' } })
+    const hints = await explainInfeasible({ cfg: CFG, entities: ENTITIES, budget, objective })
+    return { status: r.status, ms, minFeasibleCost: floor.status === 'optimal' ? floor.totalCost : null, hints }
   }
 
   const issues = validateItems(toSimItems(r.slots, CFG), CFG)
@@ -133,6 +134,7 @@ async function solve() {
   if (d.status !== 'optimal') {
     out.innerHTML = '<div class="card"><div class="banner bad">พิสูจน์แล้ว: งบนี้เป็นไปไม่ได้ (infeasible)</div>' +
       (d.minFeasibleCost ? '<div>ชุดที่ถูกที่สุดที่ผ่านทุกเงื่อนไขอยู่ที่ <b>' + fmt(d.minFeasibleCost) + ' ฿</b></div>' : '') +
+      (d.hints && d.hints.length ? '<div class="muted" style="margin-top:6px">ผ่อนอันใดอันหนึ่งนี้ก็เป็นไปได้: ' + d.hints.join(', ') + '</div>' : '') +
       '<div class="muted" style="margin-top:6px">solve ' + d.ms + ' ms</div></div>'
     return
   }

@@ -2,7 +2,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 import type { DomainConfig } from '~/engine/suggest'
 import type { SlotItem } from '~/engine/suggest'
 import type { Entity } from '~/data/types'
-import { fetchCandidates, fetchCheapestCandidates, fetchByIds, dbConfigFrom } from './db'
+import { fetchCandidates, fetchCheapestCandidates, fetchAllCandidates, fetchByIds, dbConfigFrom } from './db'
 
 const DEFAULT_FETCH_LIMITS = {
   anchor:     60,
@@ -26,6 +26,22 @@ export async function fetchForDomain(
   const { budget, pinnedEntities, excluded } = input
   const limits = { ...DEFAULT_FETCH_LIMITS, ...cfg.fetchLimits }
   const dbCfg = dbConfigFrom(cfg)
+
+  // Solver strategies need the complete candidate set per type, not sampled bands.
+  if (cfg.fillStrategy === 'cpsat') {
+    const perType = await Promise.all(
+      cfg.entityTypes.map((t) =>
+        excluded[t] || (pinnedEntities[t]?.length ?? 0) > 0
+          ? Promise.resolve([] as Entity[])
+          : fetchAllCandidates(DB, t, dbCfg),
+      ),
+    )
+    const seen = new Set<number>()
+    return [
+      ...Object.values(pinnedEntities).flat().map((s) => s.entity),
+      ...perType.flat().filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))),
+    ]
+  }
 
   const maxCost = budget ?? 999_999_999
   const anchorType   = cfg.anchorType   ?? cfg.fillOrder[0]!

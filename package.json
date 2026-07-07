@@ -9,7 +9,7 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "test": "tsx --tsconfig test/tsconfig.json test/ruleflow.ts && tsx --tsconfig test/tsconfig.json test/greedy.ts && tsx --tsconfig test/tsconfig.json test/suggest-pool.ts && tsx --tsconfig test/tsconfig.json test/cpsat.ts",
-    "play:solver": "tsx --tsconfig test/tsconfig.json solver/playground/server.ts"
+    "play:solver": "tsx --tsconfig test/tsconfig.json scripts/solver-playground.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260613.1",
