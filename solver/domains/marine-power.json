@@ -1,30 +1,44 @@
 {
   "$schema": "../../app/domains/schema.json",
-
-  "entityTypes": ["battery", "solar_panel", "charge_controller", "inverter"],
+  "entityTypes": [
+    "battery",
+    "solar_panel",
+    "charge_controller",
+    "inverter"
+  ],
   "entityTypeLabels": {
     "battery": "Battery Bank",
     "solar_panel": "Solar Panel",
     "charge_controller": "Charge Controller",
     "inverter": "Inverter"
   },
-
-  "fillOrder": ["battery", "solar_panel", "charge_controller", "inverter"],
-
-  "maxPerType": { "battery": 8, "solar_panel": 6, "charge_controller": 1, "inverter": 1 },
+  "fillOrder": [
+    "battery",
+    "solar_panel",
+    "charge_controller",
+    "inverter"
+  ],
+  "maxPerType": {
+    "battery": 8,
+    "solar_panel": 6,
+    "charge_controller": 1,
+    "inverter": 1
+  },
   "dynamicMaxPerType": {},
-
-  "requiredTypes": ["battery", "solar_panel", "charge_controller", "inverter"],
-
+  "requiredTypes": [
+    "battery",
+    "solar_panel",
+    "charge_controller",
+    "inverter"
+  ],
   "costAttribute": "unit_cost",
   "costColumn": "unit_cost",
   "publishedStatus": "published",
   "costPrecision": 0,
-
-  "aggregateDisplay": { "primary": "AGG_USABLE_CAPACITY", "safety": "AGG_SOLAR_YIELD" },
-
-  "x_objective": { "mode": "min_cost" },
-
+  "aggregateDisplay": {
+    "primary": "AGG_USABLE_CAPACITY",
+    "safety": "AGG_SOLAR_YIELD"
+  },
   "rules": [
     {
       "id": 1,
@@ -36,10 +50,17 @@
       "is_active": true,
       "condition": {
         "aggregate": {
-          "function": "sum", "attribute": "usable_ah",
-          "from_types": ["battery"], "multiply_by_quantity": true
+          "function": "sum",
+          "attribute": "usable_ah",
+          "from_types": [
+            "battery"
+          ],
+          "multiply_by_quantity": true
         },
-        "compare_to": { "mode": "fixed_value", "value": 240 },
+        "compare_to": {
+          "mode": "fixed_value",
+          "value": 240
+        },
         "operator": ">="
       },
       "message": "Usable battery capacity :aggregate_value Ah is below the 240 Ah required for 2-day autonomy",
@@ -55,10 +76,17 @@
       "is_active": true,
       "condition": {
         "aggregate": {
-          "function": "sum", "attribute": "daily_ah_yield",
-          "from_types": ["solar_panel"], "multiply_by_quantity": true
+          "function": "sum",
+          "attribute": "daily_ah_yield",
+          "from_types": [
+            "solar_panel"
+          ],
+          "multiply_by_quantity": true
         },
-        "compare_to": { "mode": "fixed_value", "value": 132 },
+        "compare_to": {
+          "mode": "fixed_value",
+          "value": 132
+        },
         "operator": ">="
       },
       "message": "Solar daily yield :aggregate_value Ah is below the 132 Ah daily demand (incl. losses)",
@@ -74,10 +102,18 @@
       "is_active": true,
       "condition": {
         "aggregate": {
-          "function": "sum", "attribute": "watt_rating",
-          "from_types": ["solar_panel"], "multiply_by_quantity": true
+          "function": "sum",
+          "attribute": "watt_rating",
+          "from_types": [
+            "solar_panel"
+          ],
+          "multiply_by_quantity": true
         },
-        "compare_to": { "mode": "entity_attribute", "entity_type": "charge_controller", "attribute": "max_input_w" },
+        "compare_to": {
+          "mode": "entity_attribute",
+          "entity_type": "charge_controller",
+          "attribute": "max_input_w"
+        },
         "operator": "<="
       },
       "message": "Solar array :aggregate_value W exceeds controller capacity :capacity_value W",
@@ -93,10 +129,16 @@
       "is_active": true,
       "condition": {
         "aggregate": {
-          "function": "min", "attribute": "continuous_w",
-          "from_types": ["inverter"]
+          "function": "min",
+          "attribute": "continuous_w",
+          "from_types": [
+            "inverter"
+          ]
         },
-        "compare_to": { "mode": "fixed_value", "value": 1500 },
+        "compare_to": {
+          "mode": "fixed_value",
+          "value": 1500
+        },
         "operator": ">="
       },
       "message": "Inverter :aggregate_value W is below the 1500 W peak load",
@@ -112,10 +154,17 @@
       "is_active": true,
       "condition": {
         "aggregate": {
-          "function": "sum", "attribute": "area_m2",
-          "from_types": ["solar_panel"], "multiply_by_quantity": true
+          "function": "sum",
+          "attribute": "area_m2",
+          "from_types": [
+            "solar_panel"
+          ],
+          "multiply_by_quantity": true
         },
-        "compare_to": { "mode": "fixed_value", "value": 4.0 },
+        "compare_to": {
+          "mode": "fixed_value",
+          "value": 4.0
+        },
         "operator": "<="
       },
       "message": "Solar array area :aggregate_value m² exceeds the 4.0 m² available",
@@ -131,10 +180,18 @@
       "is_active": true,
       "condition": {
         "aggregate": {
-          "function": "sum", "attribute": "weight_kg",
-          "from_types": ["battery", "solar_panel"], "multiply_by_quantity": true
+          "function": "sum",
+          "attribute": "weight_kg",
+          "from_types": [
+            "battery",
+            "solar_panel"
+          ],
+          "multiply_by_quantity": true
         },
-        "compare_to": { "mode": "fixed_value", "value": 160 },
+        "compare_to": {
+          "mode": "fixed_value",
+          "value": 160
+        },
         "operator": "<="
       },
       "message": "Added weight :aggregate_value kg exceeds the 160 kg allowance",
@@ -152,13 +209,21 @@
         "match_by": "attribute_pair",
         "source_attribute": "supports_chemistry",
         "target_attribute": "chemistry",
-        "source_types": ["charge_controller"],
-        "target_types": ["battery"]
+        "source_types": [
+          "charge_controller"
+        ],
+        "target_types": [
+          "battery"
+        ]
       },
       "condition": {
         "==": [
-          { "var": "source.attributes.supports_chemistry" },
-          { "var": "target.attributes.chemistry" }
+          {
+            "var": "source.attributes.supports_chemistry"
+          },
+          {
+            "var": "target.attributes.chemistry"
+          }
         ]
       },
       "message": ":source.name does not support :target.attributes.chemistry batteries",
@@ -176,17 +241,56 @@
         "match_by": "attribute_pair",
         "source_attribute": "input_voltage",
         "target_attribute": "voltage",
-        "source_types": ["inverter"],
-        "target_types": ["battery"]
+        "source_types": [
+          "inverter"
+        ],
+        "target_types": [
+          "battery"
+        ]
       },
       "condition": {
         "==": [
-          { "var": "source.attributes.input_voltage" },
-          { "var": "target.attributes.voltage" }
+          {
+            "var": "source.attributes.input_voltage"
+          },
+          {
+            "var": "target.attributes.voltage"
+          }
         ]
       },
       "message": ":source.name (:source.attributes.input_voltage V) does not match a :target.attributes.voltage V battery bank",
       "resolution": "Match inverter and battery bank system voltage"
+    },
+    {
+      "id": 9,
+      "code": "AGG_WEIGHT_COMFORT",
+      "name": "Prefer staying under the comfort weight target",
+      "check_type": "aggregate",
+      "severity": "warning",
+      "priority": 20,
+      "is_active": true,
+      "penalty": 120,
+      "condition": {
+        "aggregate": {
+          "function": "sum",
+          "attribute": "weight_kg",
+          "from_types": [
+            "battery",
+            "solar_panel"
+          ],
+          "multiply_by_quantity": true
+        },
+        "compare_to": {
+          "mode": "fixed_value",
+          "value": 120
+        },
+        "operator": "<="
+      },
+      "message": "Added weight :aggregate_value kg is over the 120 kg comfort target",
+      "resolution": "Lighter batteries (LiFePO4) keep handling and trim better"
     }
-  ]
+  ],
+  "objective": {
+    "mode": "min_cost"
+  }
 }

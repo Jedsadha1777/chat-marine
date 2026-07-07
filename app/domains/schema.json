@@ -158,7 +158,7 @@
     "fillStrategy": {
       "type": "string",
       "default": "backtrack",
-      "description": "Name of the fill algorithm to use. Must match a registered strategy in app/engine/strategies/index.ts. Currently only 'backtrack' is available.",
+      "description": "Name of the fill algorithm to use. Must match a registered strategy in app/engine/strategies/index.ts: 'backtrack' (greedy heuristic, default) or 'cpsat' (exact MILP solver — needs objective and honors penalty on warning rules).",
       "examples": ["backtrack"]
     },
 
@@ -170,6 +170,20 @@
     "budgetPlan": {
       "$ref": "#/$defs/Module",
       "description": "RuleFlow2 module that calculates anchorTarget from effectiveBudget and entityCount. If omitted, uses: round(effectiveBudget * ceil(entityCount/2) / entityCount)."
+    },
+
+    "objective": {
+      "description": "Optimization objective for solver-backed fill strategies (fillStrategy 'cpsat'). The backtrack strategy ignores this. Default when omitted: min_cost.",
+      "oneOf": [
+        { "type": "object", "required": ["mode"], "additionalProperties": false,
+          "properties": { "mode": { "const": "min_cost" } } },
+        { "type": "object", "required": ["mode", "type", "attribute"], "additionalProperties": false,
+          "properties": {
+            "mode":      { "const": "max_attribute" },
+            "type":      { "type": "string", "description": "Entity type whose attribute is maximized." },
+            "attribute": { "type": "string", "description": "Numeric attribute to maximize (multiplied by quantity)." }
+          } }
+      ]
     },
 
     "postFillTypes": {
@@ -337,6 +351,7 @@
         "check_type": { "type": "string", "enum": ["pairwise", "aggregate"], "description": "pairwise = evaluate one entity pair at a time. aggregate = sum/count across types vs a capacity." },
         "severity":   { "type": "string", "enum": ["error", "warning", "info"], "description": "error = blocks valid build. warning = shown but does not block. info = informational." },
         "priority":   { "type": "integer", "description": "Evaluation order — higher number runs first." },
+        "penalty":    { "type": "number", "exclusiveMinimum": 0, "description": "Soft-constraint weight for solver strategies: cost units added to the objective per unit of violation. Meaningful on warning rules only — error rules are always hard. Warning rules without penalty are invisible to the solver (still reported by validation)." },
         "is_active":  { "type": "boolean", "description": "Set false to disable without removing." },
         "message":    { "type": "string", "description": "Failure message. Interpolation tokens — pairwise rules: :source.attributes.X, :target.attributes.X (also :source.name, :target.name); aggregate rules: :aggregate_value, :capacity_value, :utilization_pct. Tokens support pipe filters, e.g. ':aggregate_value | round(0)', ':source.name | upper' (see app/engine/template.ts for the full filter list)." },
         "resolution": { "type": "string", "description": "Suggested fix shown to the user." },

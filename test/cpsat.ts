@@ -38,7 +38,7 @@ const ENTITIES = JSON.parse(readFileSync(join(ROOT, 'solver/domains/marine-power
 
 console.log('\n── domain sanity ──')
 assert(CFG.entityTypes.length === 4, 'domain has 4 entity types')
-assert(CFG.rules.length === 8, 'domain has 8 rules')
+assert(CFG.rules.length === 9, 'domain has 9 rules')
 assert(ENTITIES.length === 44, '44 entities loaded')
 
 // ── compiler smoke ────────────────────────────────────────────────────────────

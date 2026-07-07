@@ -29,6 +29,10 @@ export interface DynMaxFormula {
 
 export type DynamicMaxCfg = DynMaxSources | DynMaxFormula
 
+export type SolverObjective =
+  | { mode: 'min_cost' }
+  | { mode: 'max_attribute'; type: string; attribute: string }
+
 export interface PostFillCfg {
   type:              string
   preferAttribute?:  string
@@ -67,6 +71,7 @@ export interface DomainConfig {
   fetchLimits?:        FetchLimits
   fillStrategy?:       string
   budgetPlan?:         Module
+  objective?:          SolverObjective
   publishedStatus?:    string
   costColumn?:         string
 }
