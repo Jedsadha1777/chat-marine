@@ -1,6 +1,6 @@
 /**
  * HiGHS (WASM) adapter. Loaded lazily via dynamic import so the solver
- * chunk is only pulled in when the cpsat strategy actually runs.
+ * chunk is only pulled in when the milp strategy actually runs.
  */
 
 export interface SolveOptions {

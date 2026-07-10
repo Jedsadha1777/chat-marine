@@ -1,10 +1,10 @@
 import { BacktrackFillStrategy } from './backtrack'
-import { CpsatFillStrategy } from './cpsat/index'
+import { MilpFillStrategy } from './milp/index'
 import type { FillStrategy } from './types'
 
 const _registry = new Map<string, FillStrategy>([
   ['backtrack', new BacktrackFillStrategy()],
-  ['cpsat', new CpsatFillStrategy()],
+  ['milp', new MilpFillStrategy()],
 ])
 
 export function getStrategy(name?: string): FillStrategy {

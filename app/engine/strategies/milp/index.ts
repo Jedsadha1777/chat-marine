@@ -9,10 +9,10 @@
 import type { Entity } from '~/data/types'
 import type { SlotItem } from '~/engine/engine-types'
 import type { FillInput, FillStrategy } from '~/engine/strategies/types'
-import { compileModel, type CpsatInput } from './compiler'
+import { compileModel, type MilpInput } from './compiler'
 import { solveLp } from './highs'
 
-export interface CpsatResult {
+export interface MilpResult {
   status: 'optimal' | 'infeasible' | 'error'
   slots: Record<string, SlotItem[]>
   totalCost: number
@@ -22,7 +22,7 @@ export interface CpsatResult {
   pickedVars: string[]
 }
 
-export async function cpsatSolve(input: CpsatInput): Promise<CpsatResult> {
+export async function milpSolve(input: MilpInput): Promise<MilpResult> {
   const { cfg } = input
   const costAttr = cfg.costAttribute
   const pinned = input.pinned ?? {}
@@ -70,9 +70,9 @@ export async function cpsatSolve(input: CpsatInput): Promise<CpsatResult> {
   return { status: 'optimal', slots, totalCost, objectiveValue, penaltyCost, pickedVars }
 }
 
-export class CpsatFillStrategy implements FillStrategy {
+export class MilpFillStrategy implements FillStrategy {
   async fill({ entities, cfg, budget, pinned, excluded }: FillInput): Promise<Record<string, SlotItem[]>> {
-    const result = await cpsatSolve({
+    const result = await milpSolve({
       cfg,
       entities,
       budget: Number.isFinite(budget) ? budget : null,
@@ -80,10 +80,10 @@ export class CpsatFillStrategy implements FillStrategy {
       excluded,
     })
     if (result.status !== 'optimal') {
-      console.error(`[cpsat] solve status: ${result.status} — returning pinned-only slots`)
+      console.error(`[milp] solve status: ${result.status} — returning pinned-only slots`)
     }
     return result.slots
   }
 }
 
-export type { CpsatInput, Entity }
+export type { MilpInput, Entity }

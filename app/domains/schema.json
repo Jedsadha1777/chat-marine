@@ -158,7 +158,7 @@
     "fillStrategy": {
       "type": "string",
       "default": "backtrack",
-      "description": "Name of the fill algorithm to use. Must match a registered strategy in app/engine/strategies/index.ts: 'backtrack' (greedy heuristic, default) or 'cpsat' (exact MILP solver — needs objective and honors penalty on warning rules).",
+      "description": "Name of the fill algorithm to use. Must match a registered strategy in app/engine/strategies/index.ts: 'backtrack' (greedy heuristic, default) or 'milp' (exact MILP solver — needs objective and honors penalty on warning rules).",
       "examples": ["backtrack"]
     },
 
@@ -173,7 +173,7 @@
     },
 
     "objective": {
-      "description": "Optimization objective for solver-backed fill strategies (fillStrategy 'cpsat'). The backtrack strategy ignores this. Default when omitted: min_cost.",
+      "description": "Optimization objective for solver-backed fill strategies (fillStrategy 'milp'). The backtrack strategy ignores this. Default when omitted: min_cost.",
       "oneOf": [
         { "type": "object", "required": ["mode"], "additionalProperties": false,
           "properties": { "mode": { "const": "min_cost" } } },

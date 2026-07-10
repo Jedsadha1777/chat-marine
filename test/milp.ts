@@ -1,5 +1,5 @@
 /**
- * cpsat strategy — engine-integrated exact MILP fill (HiGHS).
+ * milp strategy — engine-integrated exact MILP fill (HiGHS).
  *
  * Covers: registry wiring, FillStrategy/buildSuggestion end-to-end, pinned,
  * excluded, soft constraints (rule penalty), top-K alternatives, infeasibility
@@ -13,10 +13,10 @@ import type { Entity, CompatibilityRule } from '~/data/types'
 import type { DomainConfig, SlotItem } from '~/engine/suggest'
 import { validateItems, toSimItems, totalCostOf, buildSuggestion } from '~/engine/suggest'
 import { getStrategy } from '~/engine/strategies/index'
-import { CpsatFillStrategy, cpsatSolve } from '~/engine/strategies/cpsat/index'
-import { compileModel } from '~/engine/strategies/cpsat/compiler'
-import { solveTopK } from '~/engine/strategies/cpsat/topk'
-import { explainInfeasible } from '~/engine/strategies/cpsat/explain'
+import { MilpFillStrategy, milpSolve } from '~/engine/strategies/milp/index'
+import { compileModel } from '~/engine/strategies/milp/compiler'
+import { solveTopK } from '~/engine/strategies/milp/topk'
+import { explainInfeasible } from '~/engine/strategies/milp/explain'
 
 // ── test harness ──────────────────────────────────────────────────────────────
 
@@ -52,14 +52,14 @@ const weightOf = (slots: Record<string, SlotItem[]>): number =>
   sumAttr(slots, 'battery', 'weight_kg') + sumAttr(slots, 'solar_panel', 'weight_kg')
 
 console.log('\n── domain sanity ──')
-assert(CFG.fillStrategy === 'cpsat', 'marine domain declares fillStrategy cpsat')
+assert(CFG.fillStrategy === 'milp', 'marine domain declares fillStrategy milp')
 assert(CFG.rules.length === 9, 'domain has 9 rules (8 hard + 1 soft)')
 assert(ENTITIES.length === 44, '44 entities loaded')
 
 // ── registry wiring ───────────────────────────────────────────────────────────
 
 console.log('\n── registry ──')
-assert(getStrategy('cpsat') instanceof CpsatFillStrategy, "getStrategy('cpsat') returns CpsatFillStrategy")
+assert(getStrategy('milp') instanceof MilpFillStrategy, "getStrategy('milp') returns MilpFillStrategy")
 
 // ── compiler smoke ────────────────────────────────────────────────────────────
 
@@ -96,7 +96,7 @@ console.log(`   → ${Object.entries(e2e.slots).map(([t, s]) => s[0] ? `${t}=${s
 // ── soft constraint: objective accounting ─────────────────────────────────────
 
 console.log('\n── soft constraint (penalty) ──')
-const soft = await cpsatSolve({ cfg: CFG, entities: ENTITIES, budget: 80000 })
+const soft = await milpSolve({ cfg: CFG, entities: ENTITIES, budget: 80000 })
 assert(soft.status === 'optimal', 'soft solve optimal @80k')
 assert(Math.abs(soft.objectiveValue! - (soft.totalCost + soft.penaltyCost)) < 1e-6,
   'objectiveValue = totalCost + penaltyCost', `${soft.objectiveValue} vs ${soft.totalCost}+${soft.penaltyCost}`)
@@ -105,11 +105,11 @@ assert(Math.abs(soft.penaltyCost - 120 * softOver) < 1e-6,
   'penaltyCost = penalty × kg over comfort target', `${soft.penaltyCost} vs 120×${softOver}`)
 
 const noSoftCfg: DomainConfig = { ...CFG, rules: CFG.rules.map((r) => r.code === 'AGG_WEIGHT_COMFORT' ? { ...r, is_active: false } : r) }
-const noSoft = await cpsatSolve({ cfg: noSoftCfg, entities: ENTITIES, budget: 80000 })
+const noSoft = await milpSolve({ cfg: noSoftCfg, entities: ENTITIES, budget: 80000 })
 assert(noSoft.totalCost <= soft.totalCost, 'pure cost without soft rule ≤ cost with soft rule')
 
 const harshCfg: DomainConfig = { ...CFG, rules: CFG.rules.map((r) => r.code === 'AGG_WEIGHT_COMFORT' ? { ...r, penalty: 10000 } : r) }
-const harsh = await cpsatSolve({ cfg: harshCfg, entities: ENTITIES, budget: 80000 })
+const harsh = await milpSolve({ cfg: harshCfg, entities: ENTITIES, budget: 80000 })
 assert(weightOf(harsh.slots) <= 120, 'harsh penalty forces config under comfort weight', `got ${weightOf(harsh.slots)}`)
 assert(errorsOf(harsh.slots).length === 0, 'harsh-penalty config still passes all hard rules')
 
@@ -117,7 +117,7 @@ assert(errorsOf(harsh.slots).length === 0, 'harsh-penalty config still passes al
 
 console.log('\n── pinned battery bank ──')
 const LFP300 = ENTITIES.find((e) => e.id === 1013)!
-const pinnedRes = await cpsatSolve({
+const pinnedRes = await milpSolve({
   cfg: CFG, entities: ENTITIES, budget: 100000,
   pinned: { battery: [{ entity: LFP300, quantity: 2 }] },
 })
@@ -133,7 +133,7 @@ assert((pinnedCtl?.attributes['supports_chemistry'] as string[]).includes('lifep
 
 console.log('\n── excluded inverter ──')
 const noInvCfg: DomainConfig = { ...CFG, requiredTypes: ['battery', 'solar_panel', 'charge_controller'] }
-const noInv = await cpsatSolve({
+const noInv = await milpSolve({
   cfg: noInvCfg, entities: ENTITIES, budget: 60000,
   excluded: { inverter: true },
 })
@@ -159,7 +159,7 @@ console.log(`   → objectives: ${objs.map((o) => Math.round(o!)).join(', ')}`)
 // ── infeasibility explanation ─────────────────────────────────────────────────
 
 console.log('\n── explain infeasible @45,000 ──')
-const r45 = await cpsatSolve({ cfg: CFG, entities: ENTITIES, budget: 45000 })
+const r45 = await milpSolve({ cfg: CFG, entities: ENTITIES, budget: 45000 })
 assert(r45.status === 'infeasible', '45k proven infeasible')
 const hints = await explainInfeasible({ cfg: CFG, entities: ENTITIES, budget: 45000 })
 assert(hints.includes('budget'), "hints include 'budget' (raising it restores feasibility)", hints.join(','))
@@ -167,7 +167,7 @@ console.log(`   → relaxations that restore feasibility: ${hints.join(', ')}`)
 
 // ── PC domain smoke on real seed data ─────────────────────────────────────────
 
-console.log('\n── PC domain via cpsat (seed data) ──')
+console.log('\n── PC domain via milp (seed data) ──')
 const PC = JSON.parse(readFileSync(join(ROOT, 'app/domains/pc-builder.json'), 'utf-8')) as DomainConfig
 
 function loadSeed(): Entity[] {
@@ -188,7 +188,7 @@ const pcPool = PC.entityTypes.flatMap((t) =>
     .sort((a, b) => Number(a.attributes.unit_cost) - Number(b.attributes.unit_cost))
     .filter((_, i, arr) => i < 30 || i >= arr.length - 10),
 )
-const pcCfg: DomainConfig = { ...PC, fillStrategy: 'cpsat' }
+const pcCfg: DomainConfig = { ...PC, fillStrategy: 'milp' }
 const pc = await buildSuggestion(pcPool, pcCfg, { budget: 60000 })
 const pcIssues = validateItems(toSimItems(pc.slots, pcCfg), pcCfg).filter((i) => i.severity === 'error')
 assert(PC.requiredTypes.every((t) => (pc.slots[t] ?? []).length > 0), 'PC required types all present')

@@ -28,7 +28,7 @@ export async function fetchForDomain(
   const dbCfg = dbConfigFrom(cfg)
 
   // Solver strategies need the complete candidate set per type, not sampled bands.
-  if (cfg.fillStrategy === 'cpsat') {
+  if (cfg.fillStrategy === 'milp') {
     const perType = await Promise.all(
       cfg.entityTypes.map((t) =>
         excluded[t] || (pinnedEntities[t]?.length ?? 0) > 0

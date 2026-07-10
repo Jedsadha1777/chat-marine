@@ -293,5 +293,5 @@
   "objective": {
     "mode": "min_cost"
   },
-  "fillStrategy": "cpsat"
+  "fillStrategy": "milp"
 }
