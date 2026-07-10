@@ -17,7 +17,7 @@ import type { Entity, AggregateCondition, CompatibilityRule } from '~/data/types
 import type { DomainConfig, SlotItem, SolverObjective } from '~/engine/engine-types'
 import { runPairwise } from '~/engine/pairwise'
 
-export interface CpsatInput {
+export interface MilpInput {
   cfg: DomainConfig
   entities: Entity[]
   budget: number | null
@@ -59,7 +59,7 @@ function attrNum(e: Entity, attr: string): number {
   return Number(e.attributes[attr] ?? 0)
 }
 
-export function compileModel(input: CpsatInput): CompiledModel {
+export function compileModel(input: MilpInput): CompiledModel {
   const { cfg, budget } = input
   const pinned = input.pinned ?? {}
   const excluded = input.excluded ?? {}

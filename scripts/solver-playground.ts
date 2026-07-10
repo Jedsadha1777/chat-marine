@@ -11,8 +11,8 @@ import { fileURLToPath } from 'node:url'
 import type { Entity } from '~/data/types'
 import type { DomainConfig } from '~/engine/suggest'
 import { validateItems, toSimItems } from '~/engine/suggest'
-import { cpsatSolve } from '~/engine/strategies/cpsat/index'
-import { explainInfeasible } from '~/engine/strategies/cpsat/explain'
+import { milpSolve } from '~/engine/strategies/milp/index'
+import { explainInfeasible } from '~/engine/strategies/milp/explain'
 import type { SolverObjective } from '~/engine/engine-types'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -24,11 +24,11 @@ const sumAttr = (slots: Record<string, { entity: Entity; quantity: number }[]>, 
 
 async function solve(budget: number | null, objective: SolverObjective) {
   const t0 = performance.now()
-  const r = await cpsatSolve({ cfg: CFG, entities: ENTITIES, budget, objective })
+  const r = await milpSolve({ cfg: CFG, entities: ENTITIES, budget, objective })
   const ms = Math.round(performance.now() - t0)
 
   if (r.status !== 'optimal') {
-    const floor = await cpsatSolve({ cfg: CFG, entities: ENTITIES, budget: null, objective: { mode: 'min_cost' } })
+    const floor = await milpSolve({ cfg: CFG, entities: ENTITIES, budget: null, objective: { mode: 'min_cost' } })
     const hints = await explainInfeasible({ cfg: CFG, entities: ENTITIES, budget, objective })
     return { status: r.status, ms, minFeasibleCost: floor.status === 'optimal' ? floor.totalCost : null, hints }
   }

@@ -1,4 +1,4 @@
-// workerd PoC: proves the full cpsat path (compiler + HiGHS WASM) runs
+// workerd PoC: proves the full milp path (compiler + HiGHS WASM) runs
 // inside the CF Pages runtime — toy LP + the real marine-power domain.
 import marineCfg from '~/domains/marine-power.json'
 import marineEntities from '../../test/fixtures/marine-power.entities.json'
@@ -8,11 +8,11 @@ import type { DomainConfig } from '~/engine/engine-types'
 export default defineEventHandler(async () => {
   const t0 = Date.now()
   try {
-    const { solveLp } = await import('~/engine/strategies/cpsat/highs')
+    const { solveLp } = await import('~/engine/strategies/milp/highs')
     const toy = await solveLp('Minimize\n obj: 3 x + 5 y\nSubject To\n c1: x + y >= 1\nBinary\n x y\nEnd')
 
-    const { cpsatSolve } = await import('~/engine/strategies/cpsat/index')
-    const marine = await cpsatSolve({
+    const { milpSolve } = await import('~/engine/strategies/milp/index')
+    const marine = await milpSolve({
       cfg: marineCfg as unknown as DomainConfig,
       entities: marineEntities as unknown as Entity[],
       budget: 60000,

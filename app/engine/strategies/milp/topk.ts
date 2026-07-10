@@ -3,15 +3,15 @@
  * exact pick set (Σ picked y ≤ n−1) and re-solve.
  */
 
-import type { CpsatInput } from './compiler'
-import { cpsatSolve, type CpsatResult } from './index'
+import type { MilpInput } from './compiler'
+import { milpSolve, type MilpResult } from './index'
 
-export async function solveTopK(input: CpsatInput, k: number): Promise<CpsatResult[]> {
-  const out: CpsatResult[] = []
+export async function solveTopK(input: MilpInput, k: number): Promise<MilpResult[]> {
+  const out: MilpResult[] = []
   const cuts: string[] = []
 
   for (let i = 0; i < k; i++) {
-    const r = await cpsatSolve({ ...input, extraRows: [...cuts] })
+    const r = await milpSolve({ ...input, extraRows: [...cuts] })
     if (r.status !== 'optimal') break
     out.push(r)
     if (r.pickedVars.length === 0) break

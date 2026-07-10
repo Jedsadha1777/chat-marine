@@ -8,7 +8,7 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "test": "tsx --tsconfig test/tsconfig.json test/ruleflow.ts && tsx --tsconfig test/tsconfig.json test/greedy.ts && tsx --tsconfig test/tsconfig.json test/suggest-pool.ts && tsx --tsconfig test/tsconfig.json test/cpsat.ts",
+    "test": "tsx --tsconfig test/tsconfig.json test/ruleflow.ts && tsx --tsconfig test/tsconfig.json test/greedy.ts && tsx --tsconfig test/tsconfig.json test/suggest-pool.ts && tsx --tsconfig test/tsconfig.json test/milp.ts",
     "play:solver": "tsx --tsconfig test/tsconfig.json scripts/solver-playground.ts"
   },
   "devDependencies": {
