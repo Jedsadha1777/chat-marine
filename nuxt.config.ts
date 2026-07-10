@@ -20,7 +20,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'Compatibility Matrix Demo',
+      title: 'Chat Marine',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },

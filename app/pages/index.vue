@@ -145,7 +145,7 @@ const powerPct = computed(() => {
   <div class="app">
 
     <div class="topbar">
-      <span class="app-name">Compatibility Matrix</span>
+      <span class="app-name">Chat Marine</span>
       <button class="btn-sm btn-ghost" @click="clearAll(); budgetInput = ''">Reset</button>
     </div>
 
