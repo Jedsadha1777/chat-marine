@@ -57,6 +57,8 @@ Create `app/domains/<your-domain>.json` and add the schema reference for editor 
 | `fetchLimits` | จำนวน rows ที่ดึงจาก D1 ต่อ category — เพิ่มเพื่อ accuracy สูงขึ้น (กระทบ billing) |
 | `costColumn` | ชื่อ column ใน DB สำหรับ cost (ใช้ใน SQL ORDER BY / WHERE) |
 | `publishedStatus` | ค่า `status` ของ entity ที่พร้อมใช้งาน |
+| `fillStrategy` | `"backtrack"` (heuristic เร็ว, default) หรือ `"milp"` (exact solver — ดูหัวข้อ MILP ด้านล่าง) |
+| `objective` | สำหรับ `milp` เท่านั้น: `{ "mode": "min_cost" }` หรือ `{ "mode": "max_attribute", "type": "...", "attribute": "..." }` |
 
 ---
 
@@ -362,6 +364,20 @@ import domainJson from './<your-domain>.json'   // ← เปลี่ยนต�
 ```
 
 engine, API handler, และ frontend ใช้ domain ใหม่ทันที ไม่มีไฟล์อื่นต้องแตะ
+
+---
+
+## MILP strategy (exact solver)
+
+ตั้ง `"fillStrategy": "milp"` เพื่อใช้ exact Mixed-Integer Linear Programming (HiGHS WASM — รันได้ทั้ง Node และ workerd) แทน heuristic:
+
+- **เลือกจำนวนชิ้นได้จริง** — `maxPerType > 1` กลายเป็น upper bound ของตัวแปรจำนวน (เช่น แบต 1-8 ลูก)
+- **การันตี optimal** ตาม `objective` (default `min_cost`) และ**พิสูจน์ infeasible ได้** เมื่องบไม่พอ
+- rule `severity: "error"` = hard constraint / rule `severity: "warning"` ที่มี `"penalty": <number>` = soft constraint (โดนปรับใน objective ตามหน่วยที่ละเมิด) / warning ที่ไม่มี penalty = solver ไม่สนใจ (validation ยังรายงานตามปกติ)
+- aggregate ที่รองรับ: `sum` ทุกแบบ, `min`/`max` เฉพาะ type ที่เลือกชิ้นเดียวและ `fixed_value` — แบบอื่น throw `UNSUPPORTED`
+- server จะดึง candidate **ครบชุดต่อ type** (ไม่ใช่ band sampling ของ backtrack)
+
+ตัวอย่างเต็ม: `app/domains/marine-power.json` / ทดลองเล่น: `npm run play:solver`
 
 ---
 

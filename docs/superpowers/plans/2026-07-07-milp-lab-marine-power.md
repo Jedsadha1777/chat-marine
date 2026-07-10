@@ -1,4 +1,6 @@
-# CP-SAT Lab: Marine Power Domain Implementation Plan
+# MILP Lab: Marine Power Domain Implementation Plan
+
+> Naming note: this lab originally shipped under the name "cpsat", which misrepresented the technology — the solver is MILP (HiGHS), not OR-Tools CP-SAT. Renamed throughout on 2026-07-08.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -40,10 +42,10 @@ Data is tuned so constraints interact: cheapest usable-Ah path (AGM) violates we
 - [x] **Step 1:** `npm i -D highs`
 - [x] **Step 2:** Scratchpad-only spike: load highs in Node, solve a 3-variable toy LP, print result shape (`Status`, `Columns[name].Primal`, `ObjectiveValue`). Spike is deleted knowledge-gathering per TDD exploration rule; no production code from it.
 
-### Task 3: RED — write test/cpsat.ts first
+### Task 3: RED — write test/milp.ts first
 
 **Files:**
-- Create: `test/cpsat.ts` (existing assert-harness style)
+- Create: `test/milp.ts` (existing assert-harness style)
 
 Scenarios (import solver modules that do not exist yet → run MUST fail):
 1. domain loads: 4 types, 8 rules
@@ -58,7 +60,7 @@ Scenarios (import solver modules that do not exist yet → run MUST fail):
 10. objective swap: `max_attribute usable_ah` @100k → usable_ah strictly >= min-cost solution's, totalCost <= 100k
 
 - [x] **Step 1:** Write the file
-- [x] **Step 2:** `npx tsx test/cpsat.ts` → FAIL (module not found) — verify RED
+- [x] **Step 2:** `npx tsx test/milp.ts` → FAIL (module not found) — verify RED
 
 ### Task 4: GREEN — implement the solver lab
 
@@ -70,10 +72,10 @@ Scenarios (import solver modules that do not exist yet → run MUST fail):
   - pairwise error rules → reuse **`runPairwise` from `~/engine/pairwise`** on each cross pair → `y_a + y_b <= 1`
   - budget row + objective (`min_cost` | `max_attribute`)
 - Create: `solver/adapters/highs.ts` — lazy-load highs, `solveLp(lp)`
-- Create: `solver/cpsat-strategy.ts` — `cpsatFill(...): Promise<{status, slots, totalCost, objectiveValue}>`; map `Primal > 0.5` picks back to `SlotItem[]`
+- Create: `solver/milp-strategy.ts` — `milpFill(...): Promise<{status, slots, totalCost, objectiveValue}>`; map `Primal > 0.5` picks back to `SlotItem[]`
 
 - [x] **Step 1:** Implement compiler → adapter → strategy (minimal to pass)
-- [x] **Step 2:** `npx tsx test/cpsat.ts` → all pass — verify GREEN
+- [x] **Step 2:** `npx tsx test/milp.ts` → all pass — verify GREEN
 
 ### Task 5: Prove production untouched + full verification
 

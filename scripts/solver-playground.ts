@@ -1,5 +1,5 @@
 /**
- * Local playground for the marine-power CP-SAT lab.
+ * Local playground for the marine-power MILP solver.
  * Run:  npm run play:solver   →  http://127.0.0.1:5177
  * Lab-only dev harness — never imported by app/ or server/.
  */
@@ -63,7 +63,7 @@ async function solve(budget: number | null, objective: SolverObjective) {
 const HTML = `<!doctype html>
 <html lang="th"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Marine Power — CP-SAT Playground</title>
+<title>Marine Power — MILP Playground</title>
 <style>
 * { box-sizing: border-box; margin: 0; }
 body { font-family: 'IBM Plex Sans Thai', system-ui, sans-serif; background: #f5f5f5; color: #1a1a1a; font-size: 14px; padding: 24px; max-width: 760px; margin: 0 auto; }
@@ -88,7 +88,7 @@ td.r, th.r { text-align: right; }
 .bar > div { height: 100%; border-radius: 3px; }
 .muted { color: #999; font-size: 12px; }
 </style></head><body>
-<h1>⛵ Marine Power — CP-SAT Playground</h1>
+<h1>⛵ Marine Power — MILP Playground</h1>
 <div class="sub">MILP (HiGHS) บน domain ระบบไฟฟ้าเรือ — quantity sizing + capacity 5 มิติ + objective จริง</div>
 
 <div class="card">
