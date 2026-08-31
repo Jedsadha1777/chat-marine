@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAGChat Privacy Policy</title>
+<meta name="description" content="Privacy policy for RAGChat, an on-device AI chatbot for iPhone.">
+<meta name="robots" content="index,follow">
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: #16191d; --ink-soft: #4b5259; --rule: #d9dde1;
+    --paper: #ffffff; --panel: #f5f6f8; --link: #1f4a78;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e4e7ea; --ink-soft: #a7aeb5; --rule: #2c3238;
+      --paper: #14171a; --panel: #1b1f23; --link: #8fb6e2;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 0 20px 96px;
+  }
+  main { max-width: 68ch; margin: 0 auto; }
+  h1 { font-size: 1.9em; line-height: 1.2; margin: 2.2em 0 .4em; letter-spacing: -.01em; }
+  h2 { font-size: 1.25em; margin: 2.1em 0 .5em; padding-top: .9em; border-top: 1px solid var(--rule); }
+  p, li { color: var(--ink); }
+  ul { padding-left: 1.25em; }
+  li { margin: .45em 0; }
+  a { color: var(--link); }
+  hr { border: 0; border-top: 1px solid var(--rule); margin: 2em 0; }
+  code {
+    font: .88em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 3px; padding: .05em .35em;
+  }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .95em; margin: 1em 0; }
+  th, td { text-align: left; padding: .55em .7em; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { background: var(--panel); font-size: .85em; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
+  h1 + p { color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<main>
+<h1>RAGChat Privacy Policy</h1>
+<p><strong>Policy version 1.0 — for RAGChat 1.0 (iPhone, iOS 26 or later)</strong> Effective [EFFECTIVE DATE] · Last updated [EFFECTIVE DATE] Published by [DEVELOPER NAME], [COUNTRY] · Contact: [CONTACT EMAIL] App Store: <a href="https://apps.apple.com/app/id6806576444">https://apps.apple.com/app/id6806576444</a> · Bundle identifier: <code>jed.ragchat.ios</code> Canonical address of this page: [POLICY URL]</p>
+<p>RAGChat has no accounts, no analytics, no advertising and no server of ours. Your chats and documents stay in the app&#x27;s own storage on your device. This page is the long version of the policy shown in the app under Settings, and it is written to be honest about the few places your text can still go.</p>
+<p>This page is published in English, and the English text is the authoritative version.</p>
+<hr>
+<h2>What is collected</h2>
+<p><strong>The app collects nothing and sends us nothing.</strong> It contains no code that could: there is no networking of any kind in it — no <code>URLSession</code>, no HTTP client, no sockets — and no analytics, crash-reporting, advertising or tracking library is included. There is no account, no sign-in and no profile; the app never asks for your name, email, phone number or age. It reads no device identifier and no advertising identifier. It makes no logging calls of its own, so your text never reaches the system log through the app&#x27;s code.</p>
+<p>The app&#x27;s privacy manifest declares no tracking, no tracking domains and no collected data types. Its only declared API use is reading and writing its own settings.</p>
+<p>There are three narrow channels through which something can still reach us. None of them carries your chats or your documents:</p>
+<ul>
+<li><strong>If you email us.</strong> See <em>When you email us</em> below.</li>
+<li><strong>Crash reports and App Analytics from Apple.</strong> If you have turned on Settings → Privacy &amp; Security → Analytics &amp; Improvements → <em>Share With App Developers</em>, Apple may show us crash reports and aggregate usage statistics for this app. This comes from Apple under Apple&#x27;s privacy policy, not from code in the app, and it contains no chat or document text. Turning that setting off stops it.</li>
+<li><strong>App Store reviews.</strong> If you write a review, Apple shows us the nickname and text you chose to publish.</li>
+</ul>
+<h2>What the app stores, and where</h2>
+<p>Everything the app stores is inside its own container on your device, in two places.</p>
+<p><strong>A database file</strong> in the app&#x27;s Application Support folder (<code>ragchat.sqlite</code>). It holds:</p>
+<ul>
+<li>Every chat, with a title taken automatically from the beginning of your first message, plus timestamps, a pinned flag and the set of documents that chat is allowed to search.</li>
+<li>Every message you send and every reply the model produces, stored word for word, together with any translation that was made, the name of an attached file, a timestamp, the mood label shown under that reply, which document passages the reply was judged to quote, and whether the turn ended in an error.</li>
+<li>The full text of every document you import, split into passages, plus a numeric vector for each passage and a word-for-word search index of the same text.</li>
+<li>For each document: its filename, a SHA-256 hash of its contents, timestamps, and AI-written summaries of the document and of its sections.</li>
+<li>A persona: numeric trait scores and any short style rules you added. Some of those scores move on their own in response to what you type, not only when you move a slider.</li>
+<li>Six inferred numeric scores updated from your messages and decaying over time — mood, energy, familiarity, trust, comfort and curiosity — plus the descriptive labels derived from them. You can see and reset these in the app under Persona.</li>
+<li>A rolling record kept when you start a new chat or when the model runs out of room: the opening of each of your last six messages, stored in your own words, so the next session has some memory of the previous one.</li>
+<li>Two housekeeping values: which embedding model built the index, and when the app was last opened.</li>
+</ul>
+<p><strong>A documents folder</strong> (<code>Documents/KnowledgeBase</code>). Importing a file copies the complete original file there and keeps it. Text you paste is saved there as a <code>.txt</code> file.</p>
+<p>The app also stores three preferences: whether you have seen the getting-started screen, your chosen translation language, and whether you dismissed the language advisory. No message, document or persona text is kept there.</p>
+<p>Nothing is stored in the Keychain, in iCloud, in CloudKit or in any shared container, and the app declares no entitlements. Inside its own container the app writes files atomically, which briefly creates a temporary copy in the same folder before renaming it into place, and the database engine keeps a journal file beside the database while it writes.</p>
+<p>These files carry the standard protection iOS gives any app&#x27;s container. The app does not ask for a stronger protection class, so please do not read this as &quot;encrypted while the device is locked&quot;: after the first unlock following a restart, the files are readable by the operating system.</p>
+<p>The app can also rebuild its own storage without asking. If the database cannot be opened it is deleted and recreated, and if the embedding model changes the index is rebuilt, which discards document summaries. <strong>RAGChat is not a backup service — keep your original files.</strong></p>
+<h2>Your documents are visible in the Files app</h2>
+<p>This is deliberate, so that you can manage your own documents. <code>Documents/KnowledgeBase</code> is browsable in the Files app, and it can also be reached from a computer you have trusted, over USB, without opening the app. Anyone who can unlock your device can read the documents you imported.</p>
+<p>The chat database is deliberately kept elsewhere, so your chats, summaries, persona and index are not exposed in that folder.</p>
+<h2>On-device processing</h2>
+<p>Answers are generated by Apple&#x27;s on-device foundation model through the system model API. The prompt sent to that model contains your typed question, the passages retrieved from your own documents, your persona and rule text, the earlier turns of the same chat, the inferred mood and energy state, and — once a chat is rotated or the context overflows — the rolling summary of the earlier conversation.</p>
+<p>Apple documents that model as running on the device. That is Apple&#x27;s guarantee about its own framework, not something this app can verify from its own code. What the app can show is that it only ever asks for Apple&#x27;s system model: no server-backed model is ever constructed, and no prompt is sent anywhere by app code.</p>
+<p>Searching your documents happens in the app itself, against the local database.</p>
+<p>A second, separate on-device model session reads your raw message to tag mood and personality signals. It runs only when the app&#x27;s own keyword checks find nothing in the message and the system&#x27;s sentiment tagger cannot score its language, and it runs with Apple&#x27;s content guardrails set to a permissive mode for that one session.</p>
+<p>Text is extracted from your files locally. PDFs are read through their embedded text layer only — there is no image recognition and no OCR, so a scanned PDF without a text layer yields nothing. There is no speech recognition and no audio capture. SHA-256 hashing is used to spot duplicate files and to fingerprint the compiled persona text so the app can tell when it has changed; neither hash leaves the device.</p>
+<p>RAGChat needs Apple Intelligence to be turned on. When it is unavailable the app produces no answers at all — there is no remote fallback.</p>
+<h2>What Apple&#x27;s frameworks do, including downloads</h2>
+<p>The app makes no network connections of its own. That is not the same as saying that using RAGChat never causes network activity: iOS fetches Apple-provided assets on the app&#x27;s behalf.</p>
+<ul>
+<li><strong>Embedding assets.</strong> At launch, if Apple&#x27;s contextual-embedding assets are missing, the app asks the NaturalLanguage framework for them and iOS downloads them from Apple. This happens automatically, without a prompt, before you import anything. It is a model download — none of your content is in that request.</li>
+<li><strong>Translation language packs.</strong> The first time a language pair is needed, iOS may download a language pack from Apple.</li>
+<li><strong>The Apple Intelligence model</strong> is downloaded by iOS when you enable Apple Intelligence, which is a system setting outside this app.</li>
+</ul>
+<p>These transfers are made by iOS to Apple under Apple&#x27;s privacy policy, and your device&#x27;s network identity reaches Apple in the process.</p>
+<h2>Translation</h2>
+<p>The app passes text into Apple&#x27;s Translation framework in two situations, and one of them does not wait for you to tap anything:</p>
+<ul>
+<li><strong>Replies.</strong> After a turn completes, if the app can confidently detect that the reply is in a language other than the one you chose, it translates it automatically. Code blocks are skipped; prose and table cells are not, and those can include passages quoted from your own documents. When the reply&#x27;s language cannot be detected confidently, nothing is translated until you tap Translate yourself.</li>
+<li><strong>Questions.</strong> When a question is detected as being in a language the on-device model does not support, the app sends it to Apple&#x27;s Translation framework automatically on the first send, before any answer is produced.</li>
+</ul>
+<p>Apple documents translation as running on the device once a language pack is installed. As with the model, that is Apple&#x27;s guarantee about its framework rather than a claim this app can verify. When the needed pack is not installed, a question — and a reply you asked to translate by tapping Translate — is handed to the system Translate sheet, which is Apple&#x27;s own interface with its own behaviour and settings, outside this app&#x27;s control. An automatic reply translation that hits a missing pack is simply abandoned, and the reply stays in its original language.</p>
+<h2>Third-party components</h2>
+<p>Three third-party components ship inside the app. None of them performs networking or collects anything; their licence texts are reproduced in the app under Settings → About.</p>
+<div class="tablewrap"><table><thead><tr><th>Component</th><th>Purpose</th><th>Licence</th></tr></thead><tbody>
+<tr><td>GRDB</td><td>Local SQLite database access</td><td>MIT (© 2015–2024 Gwendal Roué)</td></tr>
+<tr><td>ZIPFoundation</td><td>Reading <code>.docx</code> and <code>.xlsx</code> files, which are ZIP containers</td><td>MIT (© 2017–2025 Thomas Zoechling)</td></tr>
+<tr><td>Material Symbols (one icon)</td><td>The attach-file icon</td><td>Apache 2.0 (© Google LLC)</td></tr>
+</tbody></table></div>
+<p>There is no advertising SDK, no analytics SDK and no crash-reporting SDK in the app.</p>
+<h2>Backups</h2>
+<p>Your chats and documents live in the app&#x27;s container, so they are included in your iCloud or computer backups according to your own iOS settings. Those backups are governed by Apple&#x27;s privacy policy and your backup settings, not by this app.</p>
+<h2>Deleting things</h2>
+<ul>
+<li><strong>Delete a document in the app</strong> (Knowledge → swipe to delete). This removes the original file, its passages, its vectors, its summaries and its entry in the search index.</li>
+<li><strong>Delete a file in the Files app.</strong> The file goes, but its text stays in the database until the app notices. Refreshing the Knowledge list (pull to refresh) removes the document&#x27;s passages, vectors, summaries and search-index entry.</li>
+<li><strong>Delete a chat.</strong> This removes the chat and every message in it. It does not remove the rolling record kept from that chat&#x27;s messages when you started your next chat, and it does not undo the mood and trait changes those messages caused.</li>
+<li><strong>Reset traits or mood</strong> (Persona screen). This returns the persona scores or the mood state to their defaults.</li>
+<li><strong>Delete the app.</strong> This removes everything above, including the leftovers, from the device. Copies inside a backup you already made are removed according to your backup settings.</li>
+</ul>
+<h2>Children</h2>
+<p>RAGChat is not directed at children and collects nothing from anyone, so it holds no children&#x27;s data. Answers are produced by an AI model and are not screened for suitability for children.</p>
+<h2>Your rights, and the law</h2>
+<p>Because the app sends us nothing, we hold no personal data about you from your use of the app — there is nothing for us to give you a copy of, correct, export or erase. The data described on this page is on your device and under your control, and deleting the app removes it.</p>
+<p>The one exception is correspondence you start yourself, described next. Requests about that correspondence, including access and erasure, can be made to the contact address below.</p>
+<p>This policy is governed by the laws of [COUNTRY/JURISDICTION].</p>
+<h2>When you email us</h2>
+<p>If you email the address on this page, we receive your email address and whatever you write. It is stored in the developer&#x27;s ordinary mail account and used only to answer you. We aim to reply within [RESPONSE TIME, e.g. 5 business days] and to delete support correspondence within [RETENTION PERIOD, e.g. 12 months] of the conversation ending. Please do not send us documents or chat transcripts you would rather keep private — we do not need them to help you.</p>
+<h2>Changes to this policy</h2>
+<p>This page is the current version and is updated first. The shorter copy inside the app is compiled into the app itself, so it can only change with a new App Store release and may lag behind this page; where the two differ, <strong>this page governs</strong>.</p>
+<p>There is no account and no mailing list, so there is no way for us to notify you of a change. Changes take effect when they are published here, and the date at the top of this page always reflects the current version. Please re-read this page after a major update.</p>
+<h2>About the answers</h2>
+<p>RAGChat&#x27;s answers are generated by an on-device AI model and may be inaccurate, incomplete or out of date — even when they cite your own documents. Check anything important against the original source. RAGChat does not provide medical, legal or financial advice.</p>
+<h2>Contact</h2>
+<p>Jedsadha Rojanaphan ipada1777@gmail.com Thailand</p>
+</main>
+</body>
+</html>
